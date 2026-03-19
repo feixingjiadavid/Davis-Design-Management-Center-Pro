@@ -1,21 +1,103 @@
-// ================= 核心：连接云端数据库 =================
+// js/index.js
 import { supabase } from '../supabase-config.js';
+
+// ================= 系统环境与云端配置 =================
 window.supabase = supabase;
 window.DB_TABLE = 'test_tasks'; 
-window.LIGHT_FIELDS = 'id, created_at, title, summary_desc, project, assignee, due_date, status, creator, history_json';
-
+window.LIGHT_FIELDS = 'id, title, status, project, due_date, creator, created_at, summary_desc, assignee, history_json';
 window.PAGE_TYPE = 'req'; 
 let currentUploadedFileData = null;
 
-// ================= 系统鉴权与环境初始化 =================
+// ================= 弹窗与 UI 组件 (强制挂载全局) =================
+window.closeCustomDialog = function() {
+    const overlay = document.getElementById('custom-dialog-overlay');
+    const dialog = document.getElementById('custom-dialog');
+    overlay.classList.add('opacity-0');
+    dialog.classList.add('scale-95');
+    setTimeout(() => { overlay.classList.add('hidden'); }, 300);
+}
+
+function setupDialog(title, message, type) {
+    document.getElementById('dialog-title').innerText = title;
+    document.getElementById('dialog-message').innerHTML = message;
+    const colorBar = document.getElementById('dialog-color-bar');
+    const icon = document.getElementById('dialog-icon');
+    
+    if(type === 'danger') {
+        colorBar.className = 'absolute top-0 left-0 right-0 h-1 bg-rose-500';
+        icon.className = 'w-8 h-8 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center shrink-0';
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+    } else if(type === 'success') {
+        colorBar.className = 'absolute top-0 left-0 right-0 h-1 bg-emerald-500';
+        icon.className = 'w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0';
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else {
+        colorBar.className = 'absolute top-0 left-0 right-0 h-1 bg-indigo-500';
+        icon.className = 'w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0';
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+    }
+}
+
+function showDialogUI() {
+    const overlay = document.getElementById('custom-dialog-overlay');
+    const dialog = document.getElementById('custom-dialog');
+    overlay.classList.remove('hidden');
+    setTimeout(() => { overlay.classList.remove('opacity-0'); dialog.classList.remove('scale-95'); }, 10);
+}
+
+window.showAlert = function(title, message, type="primary") {
+    setupDialog(title, message, type);
+    const btnContainer = document.getElementById('dialog-buttons');
+    let btnColor = type === 'danger' ? 'bg-rose-600 hover:bg-rose-500' : (type === 'success' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500');
+    btnContainer.innerHTML = `<button onclick="window.closeCustomDialog()" class="w-full py-2.5 ${btnColor} text-white rounded-xl text-[13px] font-bold shadow-lg transition-all btn-press">我知道了</button>`;
+    showDialogUI();
+}
+
+window.showConfirm = function(title, message, onConfirm, type="primary") {
+    setupDialog(title, message, type);
+    const btnContainer = document.getElementById('dialog-buttons');
+    let btnColor = type === 'danger' ? 'bg-rose-600 hover:bg-rose-500' : (type === 'success' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500');
+    btnContainer.innerHTML = `
+        <button onclick="window.closeCustomDialog()" class="flex-1 py-2.5 bg-transparent border border-zinc-700 text-zinc-400 hover:text-white rounded-xl text-[13px] font-bold transition-colors btn-press">取消</button>
+        <button id="dialog-confirm-btn" class="flex-1 py-2.5 ${btnColor} text-white rounded-xl text-[13px] font-bold shadow-lg transition-all btn-press">确认执行</button>
+    `;
+    document.getElementById('dialog-confirm-btn').onclick = () => { window.closeCustomDialog(); onConfirm(); };
+    showDialogUI();
+}
+
+window.showToast = function(title, desc, type = 'success') {
+    const toast = document.getElementById('action-toast');
+    document.getElementById('toast-title').innerText = title;
+    document.getElementById('toast-desc').innerText = desc;
+    const icon = document.getElementById('toast-icon');
+    if(type === 'success') {
+        icon.className = "w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0";
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else if(type === 'info') {
+        icon.className = "w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0";
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+    } else {
+        icon.className = "w-8 h-8 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center shrink-0";
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+    }
+    toast.classList.remove('hidden');
+    setTimeout(() => { toast.classList.add('hidden'); }, 3000);
+}
+
+// ================= 用户身份与鉴权 =================
+window.logout = function(e) {
+    if(e) e.stopPropagation();
+    localStorage.removeItem('activeUserObj'); 
+    window.location.href = 'login.html'; 
+}
+
 window.updateGreeting = function(user) {
     const hour = new Date().getHours();
     let timeStr = '晚上好';
     if (hour >= 5 && hour < 12) timeStr = '上午好';
     else if (hour >= 12 && hour < 18) timeStr = '下午好';
     const display = user.displayName || user.cnName || user.enName;
-    const greetingEl = document.getElementById('header-greeting');
-    if(greetingEl) greetingEl.innerHTML = `${timeStr}，${display}。<div id="sync-indicator" class="hidden w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-3" title="云端连接中..."></div>`;
+    document.getElementById('header-greeting').innerHTML = `${timeStr}，${display}。<div id="sync-indicator" class="hidden w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-2" title="云端连接中..."></div>`;
 }
 
 window.initRBAC = function() {
@@ -24,18 +106,11 @@ window.initRBAC = function() {
     const user = JSON.parse(userStr);
     const enName = user.enName ? user.enName.toLowerCase() : '';
 
-    if (!(user.perms || []).includes(window.PAGE_TYPE)) { 
-        window.showAlert("权限错误", "无权限访问此页面", "danger"); 
-        setTimeout(window.logout, 1500); 
-        return false; 
-    }
+    if (!(user.perms || []).includes(window.PAGE_TYPE)) { window.showAlert("权限错误", "无权限访问此页面", "danger"); setTimeout(window.logout, 1500); return false; }
 
     const avatarEl = document.getElementById('sidebar-avatar');
     if(avatarEl) { avatarEl.innerText = user.avatar || '?'; avatarEl.className = `w-9 h-9 rounded-full ${user.color || 'bg-indigo-600'} border border-zinc-700 flex items-center justify-center text-white font-bold text-sm shadow-lg shrink-0`; }
-    const nameEl = document.getElementById('sidebar-name');
-    if(nameEl) nameEl.innerText = user.displayName || user.cnName || user.enName;
-    const roleEl = document.getElementById('sidebar-role');
-    if(roleEl) roleEl.innerHTML = `<span class="text-indigo-400 font-bold">当前视角: 需求方</span>`;
+    if(document.getElementById('sidebar-name')) document.getElementById('sidebar-name').innerText = user.displayName || user.cnName || user.enName;
     
     window.updateGreeting(user);
 
@@ -62,7 +137,34 @@ window.initRBAC = function() {
     return user;
 }
 
-// ================= 大厅看板渲染引擎 =================
+// ================= 设置与数据操作 =================
+window.openPwdModal = function() {
+    const pwdOverlay = document.getElementById('pwd-modal-overlay');
+    const pwdModal = document.getElementById('pwd-modal');
+    pwdOverlay.classList.remove('hidden'); setTimeout(() => { pwdOverlay.classList.remove('opacity-0'); pwdModal.classList.remove('hidden'); pwdModal.classList.remove('scale-95'); }, 10);
+    document.getElementById('old-pwd').value = ''; document.getElementById('new-pwd').value = ''; document.getElementById('new-pwd-confirm').value = '';
+}
+
+window.closePwdModal = function() {
+    const pwdOverlay = document.getElementById('pwd-modal-overlay');
+    const pwdModal = document.getElementById('pwd-modal');
+    pwdOverlay.classList.add('opacity-0'); pwdModal.classList.add('scale-95'); setTimeout(() => { pwdOverlay.classList.add('hidden'); pwdModal.classList.add('hidden'); }, 300);
+}
+
+window.submitPwdChange = function() { window.showAlert('提示', '系统演示环境暂不可自助修改密码，请联系管理员。', 'info'); window.closePwdModal(); }
+
+window.clearTestData = async function() {
+    if(!window.supabase) return;
+    window.showConfirm("清空数据", "⚠️ 警告：这将直接清空云端测试表中的所有需求数据！且不可恢复！<br><br>确定要继续吗？", async () => {
+        try {
+            const { error } = await window.supabase.from(window.DB_TABLE).delete().neq('id', '0');
+            if (error) throw error;
+            window.showToast('已清空', '云端测试数据已全部清空！', 'success');
+            setTimeout(() => window.location.reload(), 1500);
+        } catch(e) { window.showAlert("清理失败", e.message, "danger"); }
+    }, "danger");
+}
+
 window.cancelTask = async function(taskId) {
     if(!window.supabase) return;
     window.showConfirm("确认撤销", `确定要彻底撤销并删除需求单 ${taskId} 吗？此操作不可恢复。`, async () => {
@@ -77,6 +179,7 @@ window.cancelTask = async function(taskId) {
     }, "danger");
 }
 
+// ================= 大盘任务渲染引擎 =================
 window.createTaskHTML = function(task, currentUser) {
     const currentUserEn = currentUser.enName ? currentUser.enName.toLowerCase() : '';
     const creator = task.creator || '';
@@ -139,9 +242,6 @@ window.createTaskHTML = function(task, currentUser) {
         </div>
     `;
 
-    let strokeColor = sColor.split('-')[1] || 'sky';
-    if(strokeColor === 'zinc') strokeColor = 'gray'; 
-
     let historyArr = [];
     try { historyArr = JSON.parse(task.history_json || '[]'); } catch(e) {}
 
@@ -192,6 +292,7 @@ window.createTaskHTML = function(task, currentUser) {
 
 window.loadTasksFromCloud = async function(isSilent = false) {
     if(!window.supabase) return;
+    
     const userStr = localStorage.getItem('activeUserObj');
     const currentUser = userStr ? JSON.parse(userStr) : null;
     if(!currentUser) return;
@@ -219,16 +320,18 @@ window.loadTasksFromCloud = async function(isSilent = false) {
         if(!isSilent && timelineC) timelineC.innerHTML = '';
 
         const allData = [...(ongoingRes.data || []), ...(completedRes.data || [])];
+        
         let ongoingCount = 0;
         let completedCount = 0;
 
         allData.forEach(task => {
             const creator = task.creator || '';
             const isOwner = cNames.includes(creator.toLowerCase());
+            
             if(!isOwner && !isSuperAdmin) return;
 
             if (!isSilent) {
-                const res = createTaskHTML(task, currentUser);
+                const res = window.createTaskHTML(task, currentUser);
                 if(res) { 
                     if(res.isCompleted) {
                         if(completedC) { completedC.insertAdjacentHTML('beforeend', res.cardHTML); completedCount++; }
@@ -244,6 +347,7 @@ window.loadTasksFromCloud = async function(isSilent = false) {
 
         if(!isSilent) {
             if(spinner) spinner.classList.add('hidden');
+            
             if(ongoingC && ongoingCount === 0) {
                 ongoingC.innerHTML += `
                     <div class="text-center py-20 bg-[#121217] rounded-3xl border border-white/5 border-dashed">
@@ -268,6 +372,7 @@ window.loadTasksFromCloud = async function(isSilent = false) {
                 }
             }
         }
+
     } catch(e) { 
         console.error(e); 
         if(spinner) spinner.classList.add('hidden');
@@ -276,30 +381,190 @@ window.loadTasksFromCloud = async function(isSilent = false) {
     }
 }
 
-window.previewTask = function(taskId, title='', col='') {
-    document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active-card'));
-    const targetCard = document.getElementById('card-' + taskId);
-    if(targetCard) targetCard.classList.add('active-card');
-    
-    document.querySelectorAll('[id^="timeline-"]').forEach(el => el.classList.add('hidden'));
-    const timeline = document.getElementById('timeline-' + taskId);
-    if(timeline) {
-        timeline.classList.remove('hidden');
-        const focusEl = document.getElementById('tracking-focus-text');
-        if(focusEl) {
-            focusEl.innerText = `${taskId} (${timeline.dataset.title})`;
-            focusEl.className = `${timeline.dataset.col} font-mono font-bold truncate block`;
+// ================= 消息通知引擎 =================
+window.syncNotificationsFromCloud = async function() {
+    if(!window.supabase) return;
+    const userStr = localStorage.getItem('activeUserObj');
+    if(!userStr) return;
+    const currentUser = JSON.parse(userStr);
+    const currentUserEn = currentUser.enName ? currentUser.enName.toLowerCase() : '';
+    const isLeader = currentUserEn === 'judyzzhang' || currentUserEn === 'davidxxu';
+
+    try {
+        const { data: tasks, error } = await window.supabase.from(window.DB_TABLE).select('id, title, creator, assignee, status, history_json').order('created_at', { ascending: false }).limit(200);
+        if(error) throw error;
+
+        let myUnreadNotifs = [];
+        let readReceipts = JSON.parse(localStorage.getItem('read_receipts_' + currentUserEn) || '{}');
+        let sysNotifs = JSON.parse(localStorage.getItem('sys_notifications') || '[]');
+        let sysNotifsUpdated = false;
+        let newlyFoundCount = 0;
+
+        (tasks || []).forEach(task => {
+            const creatorStr = (task.creator || '').toLowerCase();
+            const isMyCreation = creatorStr.includes((currentUser.displayName||'').toLowerCase()) || creatorStr.includes((currentUser.cnName||'').toLowerCase()) || creatorStr.includes(currentUserEn);
+            const isMyAssignment = (task.assignee || '').toLowerCase() === currentUserEn;
+            const isConcerned = isMyCreation || isMyAssignment || isLeader;
+
+            if (!isConcerned) return; 
+
+            let historyArr = [];
+            try { historyArr = JSON.parse(task.history_json || '[]'); } catch(e){}
+
+            historyArr.forEach((h, index) => {
+                const eventId = `${task.id}_${index}`; 
+                
+                if (readReceipts[eventId]) {
+                    let existing = sysNotifs.find(n => n.eventId === eventId && n.role === window.PAGE_TYPE);
+                    if (existing && !existing.read) {
+                        existing.read = true;
+                        sysNotifsUpdated = true;
+                    }
+                    return; 
+                }
+
+                const op = (h.operator || '').toLowerCase();
+                if (op.includes(currentUserEn) || op.includes((currentUser.displayName||'').toLowerCase()) || op.includes((currentUser.cnName||'').toLowerCase())) {
+                    readReceipts[eventId] = true;
+                    return;
+                }
+
+                if (!window.currentUnreadNotifs || !window.currentUnreadNotifs.find(n => n.eventId === eventId)) {
+                    newlyFoundCount++;
+                }
+
+                let actionText = h.action || '更新了状态';
+                let iconDot = 'bg-sky-500';
+                if(h.action === 'submit_draft') { actionText = '上传了最新设计正稿'; iconDot = 'bg-sky-500'; }
+                if(h.action === 'submit_framework') { actionText = '提交了设计框架'; iconDot = 'bg-amber-500'; }
+                if(h.action === 'approve_framework') { actionText = '通过了框架审批'; iconDot = 'bg-emerald-500'; }
+                if(h.is_rejected || h.action === 'reject') { actionText = '打回了该需求'; iconDot = 'bg-rose-500'; }
+                if(h.action === 'complete') { actionText = '验收通过并完结了工单'; iconDot = 'bg-emerald-500'; }
+                if(h.action === 'transfer') { actionText = '转移了需求执行人'; iconDot = 'bg-orange-500'; }
+                if(h.action === 'accept') { actionText = '已接单并开始制作'; iconDot = 'bg-sky-500'; }
+                if(h.action === 'create') { actionText = '向大厅发起了新需求'; iconDot = 'bg-indigo-500'; }
+
+                myUnreadNotifs.push({
+                    eventId: eventId,
+                    taskId: task.id,
+                    title: `[${task.id}] ${actionText}`,
+                    desc: `${h.operator || '系统'} : ${h.reply || h.desc || '请及时跟进处理'}`,
+                    time: h.time || h.created_at || new Date().toISOString(),
+                    iconDot: iconDot
+                });
+
+                if (!sysNotifs.find(n => n.eventId === eventId && n.role === window.PAGE_TYPE)) {
+                    sysNotifs.push({
+                        id: new Date().getTime() + Math.random(),
+                        eventId: eventId,
+                        taskId: task.id,
+                        title: `[${task.id}] ${actionText}`,
+                        desc: `${h.operator || '系统'} : ${h.reply || h.desc || '请及时跟进处理'}`,
+                        role: window.PAGE_TYPE, 
+                        read: false,
+                        time: h.time || h.created_at || new Date().toISOString()
+                    });
+                    sysNotifsUpdated = true;
+                }
+            });
+        });
+
+        localStorage.setItem('read_receipts_' + currentUserEn, JSON.stringify(readReceipts));
+        if (sysNotifsUpdated) {
+            localStorage.setItem('sys_notifications', JSON.stringify(sysNotifs));
         }
-    } else if (taskId === 'draft-card') {
-        const focusEl = document.getElementById('tracking-focus-text');
-        if(focusEl) {
-            focusEl.innerText = `草稿 (暂存中)`;
-            focusEl.className = `text-zinc-400 font-mono font-bold`;
+
+        myUnreadNotifs.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        if (newlyFoundCount > 0 && window.currentUnreadNotifs !== undefined) {
+            window.showToast('🔔 收到新消息', `您有 ${newlyFoundCount} 条新动态，请点击右上角铃铛查看。`, 'info');
+        }
+
+        window.currentUnreadNotifs = myUnreadNotifs; 
+        window.renderNotificationsUI();
+
+    } catch(e) { console.error("消息引擎同步失败:", e); }
+}
+
+window.renderNotificationsUI = function() {
+    const notifs = window.currentUnreadNotifs || [];
+    const unreadCount = notifs.length;
+    const bellDot = document.getElementById('bell-dot');
+    const notifContainer = document.getElementById('notif-list-container');
+
+    if (bellDot) {
+        if (unreadCount > 0) {
+            bellDot.classList.remove('hidden', 'bg-zinc-600', 'border-transparent');
+            bellDot.classList.add('bg-rose-500', 'animate-pulse', 'border-[#141417]');
+        } else {
+            bellDot.classList.add('hidden');
+        }
+    }
+
+    if (notifContainer) {
+        if (unreadCount === 0) {
+            notifContainer.innerHTML = '<div class="px-5 py-8 text-center text-zinc-500 text-xs">暂无未读消息，工作都在掌控中</div>';
+        } else {
+            let html = '';
+            notifs.forEach(n => {
+                const dateStr = new Date(n.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                html += `
+                    <div class="px-5 py-4 border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer group" onclick="window.markSingleAsRead('${n.eventId}', '${n.taskId}')">
+                        <div class="flex justify-between items-start mb-1">
+                            <h4 class="text-[13px] font-bold text-white flex items-center gap-2 group-hover:text-indigo-400 transition-colors">
+                                <span class="w-2 h-2 rounded-full ${n.iconDot} shrink-0 shadow-[0_0_8px_currentColor]"></span>
+                                ${n.title}
+                            </h4>
+                            <span class="text-[10px] text-zinc-500">${dateStr}</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 leading-relaxed pl-4">${n.desc}</p>
+                    </div>
+                `;
+            });
+            notifContainer.innerHTML = html;
         }
     }
 }
 
-// ================= 发单、草稿与表单逻辑 =================
+window.markSingleAsRead = function(eventId, taskId) {
+    const userStr = localStorage.getItem('activeUserObj');
+    if(!userStr) return;
+    const currentUserEn = JSON.parse(userStr).enName.toLowerCase();
+    let readReceipts = JSON.parse(localStorage.getItem('read_receipts_' + currentUserEn) || '{}');
+    
+    readReceipts[eventId] = true;
+    localStorage.setItem('read_receipts_' + currentUserEn, JSON.stringify(readReceipts));
+    
+    window.currentUnreadNotifs = window.currentUnreadNotifs.filter(n => n.eventId !== eventId);
+    window.renderNotificationsUI(); 
+    
+    let targetUrl = `task-detail.html?id=${taskId}`;
+    if (typeof window.PAGE_TYPE !== 'undefined') {
+        if (window.PAGE_TYPE === 'req') targetUrl = `task-detail-requester.html?id=${taskId}`;
+        if (window.PAGE_TYPE === 'design') targetUrl = `task-detail-designer.html?id=${taskId}`;
+        if (window.PAGE_TYPE === 'admin') targetUrl = `task-detail-locked.html?id=${taskId}`;
+    }
+    window.location.href = targetUrl;
+}
+
+window.markAllAsRead = function(event) {
+    if(event) event.stopPropagation();
+    const userStr = localStorage.getItem('activeUserObj');
+    if(!userStr) return;
+    const currentUserEn = JSON.parse(userStr).enName.toLowerCase();
+    let readReceipts = JSON.parse(localStorage.getItem('read_receipts_' + currentUserEn) || '{}');
+    
+    const notifs = window.currentUnreadNotifs || [];
+    notifs.forEach(n => { readReceipts[n.eventId] = true; });
+    
+    localStorage.setItem('read_receipts_' + currentUserEn, JSON.stringify(readReceipts));
+    window.currentUnreadNotifs = [];
+    window.renderNotificationsUI();
+    
+    if(window.showToast) window.showToast('全部已读', '收件箱已清空。', 'success');
+}
+
+// ================= 表单与需求提交模块 =================
 window.openModal = function(modalId, isEdit = false) {
     const overlay = document.getElementById('modal-overlay');
     overlay.classList.remove('hidden');
@@ -479,7 +744,7 @@ window.submitNewReq = async function() {
         actionReply = `直接指派给了 ${assigneeName}，等待接单。`;
     }
 
-    const btn = document.querySelector('button[onclick="submitNewReq()"]');
+    const btn = document.querySelector('button[onclick="window.submitNewReq()"]') || document.querySelector('button[onclick="submitNewReq()"]');
     const originalText = btn.innerText;
     btn.innerText = "数据同步中..."; btn.disabled = true;
     
@@ -536,6 +801,29 @@ window.submitNewReq = async function() {
     }, 1000);
 }
 
+window.previewTask = function(taskId, title='', col='') {
+    document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active-card'));
+    const targetCard = document.getElementById('card-' + taskId);
+    if(targetCard) targetCard.classList.add('active-card');
+    
+    document.querySelectorAll('[id^="timeline-"]').forEach(el => el.classList.add('hidden'));
+    const timeline = document.getElementById('timeline-' + taskId);
+    if(timeline) {
+        timeline.classList.remove('hidden');
+        const focusEl = document.getElementById('tracking-focus-text');
+        if(focusEl) {
+            focusEl.innerText = `${taskId} (${timeline.dataset.title})`;
+            focusEl.className = `${timeline.dataset.col} font-mono font-bold truncate block`;
+        }
+    } else if (taskId === 'draft-card') {
+        const focusEl = document.getElementById('tracking-focus-text');
+        if(focusEl) {
+            focusEl.innerText = `草稿 (暂存中)`;
+            focusEl.className = `text-zinc-400 font-mono font-bold`;
+        }
+    }
+}
+
 // ================= 表单输入辅助 =================
 window.toggleOtherInput = function() {
     const otherCb = document.getElementById('channel-other-cb');
@@ -587,7 +875,7 @@ window.getFileNameFromUI = function() {
     return '';
 }
 
-// ================= 下拉选项与人员配置 =================
+// ================= 下拉菜单逻辑 =================
 const PROJECT_LIST = [
     "Smart文化-OpenTalk", "Smart文化-1024", "Smart文化-后勤小管家", "Smart文化-小蓝书运营", "Smart文化-送物机器人",
     "荣誉体系-即时激励", "荣誉体系-荣誉奖项", "荣誉体系-AI奖项", "荣誉体系-最佳拍档", "荣誉体系-科技合作社", "荣誉体系-极客团",
@@ -607,7 +895,7 @@ window.renderProjects = function(filterText = '') {
     let filtered = PROJECT_LIST.filter(p => p.toLowerCase().includes(filterText.toLowerCase()));
     let html = '';
     if(filtered.length === 0) { html = `<div class="px-4 py-3 text-[13px] text-zinc-500 cursor-default">将直接使用您的手写输入 "${filterText}"</div>`; } 
-    else { filtered.forEach(p => { html += `<div class="px-4 py-2.5 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors" onmousedown="selectProject('${p}')">${p}</div>`; }); }
+    else { filtered.forEach(p => { html += `<div class="px-4 py-2.5 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors" onmousedown="window.selectProject('${p}')">${p}</div>`; }); }
     listEl.innerHTML = html;
 }
 window.selectProject = function(val) { document.getElementById('req-project').value = val; document.getElementById('project-dropdown').classList.add('hidden'); }
@@ -619,9 +907,9 @@ window.renderAssignees = function(filterText = '') {
     if(!listEl) return;
     let filtered = finalAssigneeList.filter(name => name.toLowerCase().includes(filterText.toLowerCase()));
     let html = '';
-    if ('不指定 (系统统筹)'.includes(filterText)) { html += `<div class="px-4 py-3 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors border-b border-zinc-800" onmousedown="selectAssignee('none', '不指定 (系统统筹)')">不指定 (系统统筹)</div>`; }
+    if ('不指定 (系统统筹)'.includes(filterText)) { html += `<div class="px-4 py-3 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors border-b border-zinc-800" onmousedown="window.selectAssignee('none', '不指定 (系统统筹)')">不指定 (系统统筹)</div>`; }
     if (filtered.length === 0 && !('不指定 (系统统筹)'.includes(filterText))) { html += `<div class="px-4 py-3 text-[13px] text-zinc-500 cursor-default">不在限定的执行人名单中</div>`; } 
-    else { filtered.forEach(name => { html += `<div class="px-4 py-2.5 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors" onmousedown="selectAssignee('${name}', '${name}')">${name}</div>`; }); }
+    else { filtered.forEach(name => { html += `<div class="px-4 py-2.5 text-[13px] text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors" onmousedown="window.selectAssignee('${name}', '${name}')">${name}</div>`; }); }
     listEl.innerHTML = html;
 }
 window.selectAssignee = function(val, text) { document.getElementById('req-assignee').value = val; document.getElementById('req-assignee-input').value = text; document.getElementById('assignee-dropdown').classList.add('hidden'); }
@@ -640,7 +928,7 @@ window.loadAssigneesFromCloud = async function() {
     finalAssigneeList = [...PREDEFINED_ASSIGNEES].sort();
 }
 
-// ================= 生命周期加载 =================
+// ================= 生命周期绑定 =================
 document.addEventListener('DOMContentLoaded', () => {
     if(window.initRBAC()) {
         window.loadAssigneesFromCloud();
@@ -664,7 +952,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (assWrap && assDrop && !assWrap.contains(e.target)) assDrop.classList.add('hidden');
         });
 
-        // 启动全局渲染和通知引擎
+        // 启动大厅
+        window.loadTasksFromCloud();
+        // 开启自动同步引擎
         setInterval(() => { window.loadTasksFromCloud(true); }, 8000); 
     }
 });
