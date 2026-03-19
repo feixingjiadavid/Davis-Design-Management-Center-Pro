@@ -1,3 +1,9 @@
+// ================= 核心：连接云端数据库 =================
+import { supabase } from '../supabase-config.js';
+window.supabase = supabase;
+window.DB_TABLE = 'test_tasks'; 
+window.LIGHT_FIELDS = 'id, created_at, title, summary_desc, project, assignee, due_date, status, creator, history_json';
+
 window.PAGE_TYPE = 'req'; 
 let currentUploadedFileData = null;
 
@@ -234,7 +240,6 @@ window.loadTasksFromCloud = async function(isSilent = false) {
             }
         });
 
-        // 💡 呼叫在 common.js 中的全局通知引擎
         if(window.syncNotificationsFromCloud) await window.syncNotificationsFromCloud();
 
         if(!isSilent) {
