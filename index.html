@@ -297,13 +297,7 @@
         </div>
     </div>
 
-    <script type="module">
-        import { supabase } from './supabase-config.js';
-        window.supabase = supabase;
-        window.DB_TABLE = 'test_tasks'; 
-        window.LIGHT_FIELDS = 'id, title, status, project, due_date, creator, created_at, summary_desc, assignee, history_json';
-    </script>
     <script src="./js/common.js"></script>
-    <script src="./js/index.js"></script>
+    <script src="./js/index.js" type="module"></script>
 </body>
 </html>
