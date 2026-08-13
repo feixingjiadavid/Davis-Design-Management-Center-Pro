@@ -365,3 +365,21 @@ window.submitTransfer = async function() {
     
     setTimeout(async () => { await window.loadTasksFromCloud(); }, 800);
 }
+
+// ================= 页面启动 =================
+window.addEventListener('DOMContentLoaded', async () => {
+    const user = window.initRBAC();
+    if (!user) return;
+
+    // 等待页面内的 Supabase ES Module 完成初始化。
+    for (let attempt = 0; attempt < 50 && !window.supabase; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!window.supabase) {
+        window.showAlert('连接失败', 'UAT 云端服务初始化失败，请刷新页面重试。', 'danger');
+        return;
+    }
+
+    await window.loadTasksFromCloud();
+});
