@@ -4,6 +4,10 @@ import { validateTencentDocsUrl } from "./source-validator.ts";
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 const LOGIN_MARKERS = ["微信扫码登录", "QQ登录", "登录后查看", "安全验证", "访问受限"];
+const EDITOR_SHELL_MARKERS = [
+  "__WEBLAYOUT_STATUSBAR_ICON_PLACEHOLDER__",
+  "正在同步内容...",
+];
 
 function decodeEntities(text: string) {
   return text
@@ -67,6 +71,13 @@ export async function readTencentPublic(
   const visibleText = textFromHtml(html);
   if (LOGIN_MARKERS.some((marker) => visibleText.includes(marker))) {
     return { status: "authorization_required", errorCode: "TENCENT_AUTHORIZATION_REQUIRED", errorMessage: "该腾讯文档需要微信或 QQ 授权。" };
+  }
+  if (EDITOR_SHELL_MARKERS.some((marker) => visibleText.includes(marker))) {
+    return {
+      status: "authorization_required",
+      errorCode: "TENCENT_OFFICIAL_AUTH_REQUIRED",
+      errorMessage: "链接只公开了腾讯文档编辑器外壳，正文需要配置腾讯文档官方 Token 后读取。",
+    };
   }
   if (visibleText.length < 20) {
     return { status: "unsupported", errorCode: "TENCENT_CONTENT_NOT_EXPOSED", errorMessage: "链接可以打开，但正文没有公开输出；请调整分享权限或上传 Word/PDF。" };
