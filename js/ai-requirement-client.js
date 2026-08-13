@@ -22,6 +22,11 @@ export function selectCurrentAnalysis(analyses) {
   return latest?.status === 'stale' ? null : latest;
 }
 
+export function selectCurrentClarifications(clarifications, analysis) {
+  if (!analysis?.id) return [];
+  return clarifications.filter(item => item.analysis_id === analysis.id);
+}
+
 export async function loadAiRequirementState(supabase, taskId, activeSourceUrl = '') {
   const [sourcesResult, analysesResult, clarificationsResult, generationsResult] = await Promise.all([
     supabase.from('uat_requirement_sources').select('*,uat_source_snapshots!uat_source_snapshots_source_id_fkey(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
@@ -31,10 +36,11 @@ export async function loadAiRequirementState(supabase, taskId, activeSourceUrl =
   ]);
   const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error;
   if (error) throw error;
+  const analysis = selectCurrentAnalysis(analysesResult.data || []);
   return {
     sources: selectActiveSources(sourcesResult.data || [], activeSourceUrl),
-    analysis: selectCurrentAnalysis(analysesResult.data || []),
-    clarifications: clarificationsResult.data || [],
+    analysis,
+    clarifications: selectCurrentClarifications(clarificationsResult.data || [], analysis),
     generations: generationsResult.data || [],
   };
 }
