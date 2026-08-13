@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI 设计工作台 - Davis Design UAT</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#080b14;color:#e5e7eb;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif}
+    .glass{background:rgba(17,24,39,.78);border:1px solid rgba(148,163,184,.14);box-shadow:0 18px 60px rgba(0,0,0,.25)}
+    .task.active{background:#172554;border-color:#3b82f6}.task:hover{border-color:#475569}
+    .step.done{color:#86efac;border-color:#166534;background:#052e16}.step.current{color:#bfdbfe;border-color:#2563eb;background:#172554}
+    .btn{border:0;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer}.btn:disabled{opacity:.45;cursor:not-allowed}
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="fixed inset-0 pointer-events-none" style="background:radial-gradient(circle at 75% 8%,rgba(37,99,235,.22),transparent 32%),radial-gradient(circle at 10% 80%,rgba(14,165,233,.10),transparent 30%)"></div>
+  <header class="relative h-20 px-8 flex items-center justify-between border-b border-white/10 bg-slate-950/70 backdrop-blur-xl">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black shadow-lg shadow-blue-700/30">AI</div>
+      <div><h1 class="font-bold text-lg text-white">Davis AI 设计工作台</h1><p class="text-xs text-blue-300">UAT 隔离测试环境 · AI 专属流程</p></div>
+    </div>
+    <div class="flex items-center gap-3"><span id="who" class="text-sm text-slate-400">身份验证中...</span><button id="logout" class="btn bg-slate-800 text-slate-300 hover:bg-slate-700">退出</button></div>
+  </header>
+
+  <main class="relative p-6 lg:p-8">
+    <section class="glass rounded-2xl p-5 mb-6">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <div><p class="text-xs tracking-[.22em] text-blue-400 font-bold">AI DESIGN PIPELINE</p><h2 class="text-xl font-bold text-white mt-1">接单到测试验收的完整工作流</h2></div>
+        <span id="cloudStatus" class="text-xs px-3 py-1.5 rounded-full bg-slate-800 text-slate-400">连接 UAT...</span>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="pipeline">
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">① AI 接单</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">② 理解需求</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">③ 生成内部预览</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">④ 虚拟领导审核</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">⑤ 测试验收</div>
+      </div>
+    </section>
+
+    <div class="grid lg:grid-cols-[340px_1fr] gap-6 min-h-[620px]">
+      <aside class="glass rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-4"><h2 class="font-bold text-white">AI 待办需求</h2><button id="refresh" class="text-xs text-blue-400 hover:text-blue-300">刷新</button></div>
+        <div id="taskList" class="space-y-3"><div class="text-sm text-slate-500 py-12 text-center">正在读取测试任务...</div></div>
+      </aside>
+
+      <section class="glass rounded-2xl p-5 lg:p-7" id="detail">
+        <div class="h-full min-h-[520px] flex items-center justify-center text-center">
+          <div><div class="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 mx-auto mb-4 flex items-center justify-center text-blue-400 text-2xl">✦</div><h2 class="font-bold text-white">请选择一条测试需求</h2><p class="text-sm text-slate-500 mt-2">AI 将在这里理解需求、生成内部预览并提交审核。</p></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast" class="hidden fixed right-6 bottom-6 max-w-sm px-5 py-4 rounded-xl bg-slate-800 border border-white/10 shadow-2xl text-sm z-50"></div>
+
+  <script type="module">
+    import { supabase } from './supabase-config.js';
+
+    const AI_EMAIL='davis.design.ai@webank.com';
+    const TASK_TABLE='test_tasks';
+    const JOB_TABLE='ai_design_jobs';
+    const AI_FUNCTION='uat-ai-design';
+    let currentUser=null,tasks=[],selectedId=null,busy=false;
+    const $=id=>document.getElementById(id);
+    const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const notify=(msg,bad=false)=>{const t=$('toast');t.textContent=msg;t.className='fixed right-6 bottom-6 max-w-sm px-5 py-4 rounded-xl border shadow-2xl text-sm z-50 '+(bad?'bg-rose-950 border-rose-700 text-rose-200':'bg-emerald-950 border-emerald-700 text-emerald-200');setTimeout(()=>t.classList.add('hidden'),3500)};
+
+    async function guard(){
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session){location.href='login.html';return false}
+      currentUser=session.user;
+      if(String(currentUser.email).toLowerCase()!==AI_EMAIL){location.href='index.html';return false}
+      $('who').textContent=(currentUser.user_metadata?.displayName||'Davis AI')+' · AI 设计师';
+      $('cloudStatus').textContent='UAT 已连接';$('cloudStatus').className='text-xs px-3 py-1.5 rounded-full bg-emerald-950 text-emerald-300';
+      return true;
+    }
+
+    function selected(){return tasks.find(t=>t.id===selectedId)}
+    function statusIndex(status,hasPreview){
+      if(['completed','archived','reviewing'].includes(status))return 4;
+      if(status==='pending_approval')return 3;
+      if(hasPreview||status==='processing')return 2;
+      if(['pending_accept','pending'].includes(status))return 0;
+      return 0;
+    }
+    function paintPipeline(status,hasPreview){
+      const idx=statusIndex(status,hasPreview);
+      [...document.querySelectorAll('.step')].forEach((el,i)=>{el.classList.remove('done','current');if(i<idx)el.classList.add('done');else if(i===idx)el.classList.add('current')});
+    }
+
+    async function loadTasks(){
+      $('taskList').innerHTML='<div class="text-sm text-slate-500 py-12 text-center">正在读取测试任务...</div>';
+      const {data,error}=await supabase.from(TASK_TABLE).select('*').eq('assignee','davis.design.ai').order('created_at',{ascending:false});
+      if(error){$('taskList').innerHTML='<div class="text-sm text-rose-300 p-4 rounded-xl bg-rose-950/40">任务读取失败。请点击刷新重试。<br><span class="text-xs">'+esc(error.message)+'</span></div>';return}
+      tasks=data||[];
+      if(!tasks.length){$('taskList').innerHTML='<div class="text-center py-14"><p class="text-slate-300 font-bold">当前没有 AI 测试需求</p><p class="text-xs text-slate-500 mt-2">请先使用测试需求方账号创建并指派 AI。</p></div>';$('detail').innerHTML='<div class="h-full min-h-[520px] flex items-center justify-center text-slate-500">等待测试需求进入 AI 队列</div>';paintPipeline('',false);return}
+      if(!selectedId||!tasks.some(t=>t.id===selectedId))selectedId=tasks[0].id;
+      renderList();await renderDetail();
+    }
+
+    function renderList(){
+      $('taskList').innerHTML=tasks.map(t=>'<button class="task '+(t.id===selectedId?'active':'')+' w-full text-left p-4 rounded-xl border border-slate-800 bg-slate-900/70 transition" data-id="'+esc(t.id)+'"><div class="flex justify-between gap-2"><span class="text-xs font-mono text-blue-400">'+esc(t.id)+'</span><span class="text-[11px] text-slate-500">'+esc(t.status)+'</span></div><h3 class="text-sm font-bold text-white mt-2 line-clamp-2">'+esc(t.title||'未命名测试需求')+'</h3><p class="text-xs text-slate-500 mt-2 line-clamp-2">'+esc(t.summary_desc||t.full_desc||'等待 AI 接单')+'</p></button>').join('');
+      document.querySelectorAll('.task').forEach(el=>el.onclick=async()=>{selectedId=el.dataset.id;renderList();await renderDetail()});
+    }
+
+    async function getJob(taskId){
+      const {data,error}=await supabase.from(JOB_TABLE).select('*').eq('task_id',taskId).maybeSingle();
+      if(error)throw error;return data;
+    }
+
+    async function renderDetail(){
+      const task=selected();if(!task)return;
+      let job=null,jobError='';try{job=await getJob(task.id)}catch(e){jobError=e.message}
+      const fw=job?.analysis?.framework,analysis=job?.analysis||{};
+      paintPipeline(task.status,Boolean(fw));
+      const submitted=task.status==='pending_approval';
+      $('detail').innerHTML='<div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">'+esc(task.id)+'</p><h2 class="text-2xl font-bold text-white mt-2">'+esc(task.title)+'</h2><p class="text-sm text-slate-400 mt-2">'+esc(task.project||'AI UAT')+' · 需求方 '+esc(task.creator||'uat.requester')+'</p></div><span class="px-3 py-1.5 rounded-full bg-blue-950 text-blue-300 text-xs">'+esc(task.status)+'</span></div>'+
+      '<div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5"><div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">原始需求</h3><p class="text-sm leading-7 text-slate-300 whitespace-pre-wrap">'+esc(task.full_desc||'未填写需求描述')+'</p></div>'+
+      '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">AI 需求理解</h3>'+(fw?'<div class="grid md:grid-cols-2 gap-4 text-sm"><div><p class="text-slate-500 mb-2">任务类型</p><p class="text-slate-200">'+esc(analysis.task_type)+'</p></div><div><p class="text-slate-500 mb-2">设计模式</p><p class="text-slate-200">'+esc(analysis.design_mode)+'</p></div><div><p class="text-slate-500 mb-2">待确认信息</p><p class="text-amber-300">'+esc((analysis.missing_fields||[]).join('、'))+'</p></div><div><p class="text-slate-500 mb-2">执行计划</p><p class="text-slate-200">'+esc((analysis.execution_plan||[]).join(' → '))+'</p></div></div>':'<p class="text-sm text-slate-500">尚未理解需求。点击下方按钮，AI 将接单、分析并生成内部预览。</p>')+(jobError?'<p class="text-xs text-rose-300 mt-3">AI 作业读取失败：'+esc(jobError)+'</p>':'')+'</div>'+
+      '<div class="flex flex-wrap gap-3"><button id="analyzeBtn" class="btn bg-blue-600 hover:bg-blue-500 text-white">'+(fw?'重新理解并生成预览':'AI 接单并理解需求')+'</button><button id="submitBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950" '+(!fw||submitted?'disabled':'')+'>'+(submitted?'已提交虚拟领导审核':'提交虚拟领导审核')+'</button><button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div>'+
+      '<p class="text-xs text-slate-500">内部预览不会通知正式领导，也不会写入正式环境。</p></div>'+
+      '<div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[520px]"><div class="flex justify-between items-center mb-3"><h3 class="text-sm font-bold text-white">AI 内部预览</h3>'+(fw?'<span class="text-xs text-emerald-400">'+esc(fw.version||'UAT')+'</span>':'')+'</div>'+(fw?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(fw.image_url)+'" alt="AI 生成的内部预览图">':'<div class="h-[450px] flex items-center justify-center text-center text-slate-600"><div><p class="text-3xl mb-3">◫</p><p class="text-sm">生成内部预览后将在这里显示</p></div></div>')+'</div></div>';
+      $('analyzeBtn').onclick=()=>invoke('analyze');$('submitBtn').onclick=()=>invoke('submit_framework');$('retryBtn').onclick=loadTasks;
+    }
+
+    async function invoke(action){
+      if(busy)return;const task=selected();if(!task)return;busy=true;
+      const buttons=[...document.querySelectorAll('#detail button')];buttons.forEach(b=>b.disabled=true);
+      notify(action==='analyze'?'AI 正在理解需求并生成内部预览...':'正在提交虚拟领导审核...');
+      try{
+        const {data,error}=await supabase.functions.invoke(AI_FUNCTION,{body:{task_id:task.id,action}});
+        if(error)throw error;if(!data?.ok)throw new Error(data?.error||'AI 流程执行失败');
+        notify(action==='analyze'?'AI 已完成需求理解并生成内部预览':'已提交虚拟领导审核');
+        await loadTasks();
+      }catch(e){notify('操作失败：'+e.message,true);await renderDetail()}finally{busy=false}
+    }
+
+    $('refresh').onclick=loadTasks;
+    $('logout').onclick=async()=>{await supabase.auth.signOut();localStorage.removeItem('activeUserObj');location.href='login.html'};
+    if(await guard())await loadTasks();
+  </script>
+</body>
+</html>
