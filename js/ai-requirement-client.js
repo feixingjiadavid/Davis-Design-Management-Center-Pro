@@ -14,7 +14,7 @@ export function newIdempotencyKey() {
 
 export async function loadAiRequirementState(supabase, taskId) {
   const [sourcesResult, analysesResult, clarificationsResult, generationsResult] = await Promise.all([
-    supabase.from('uat_requirement_sources').select('*,uat_source_snapshots(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
+    supabase.from('uat_requirement_sources').select('*,uat_source_snapshots!uat_source_snapshots_source_id_fkey(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_requirement_analyses').select('*').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
     supabase.from('uat_clarifications').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_design_generations').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),

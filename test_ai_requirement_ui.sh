@@ -9,3 +9,4 @@ rg -q 'Demo 版本' ai-designer-workspace.html
 rg -q 'Seedream 4\.0' ai-designer-workspace.html js/task-detail-requester.js
 rg -q 'authorization_required' js/ai-requirement-client.js
 rg -q 'idempotency_key' js/ai-requirement-client.js
+rg -q 'uat_source_snapshots!uat_source_snapshots_source_id_fkey' js/ai-requirement-client.js
