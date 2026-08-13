@@ -1,5 +1,6 @@
 // js/index.js
 import { supabase } from '../supabase-config.js';
+import { startAutomaticAnalysis } from './ai-requirement-client.js';
 
 // ================= 系统环境与云端配置 =================
 window.supabase = supabase;
@@ -792,10 +793,9 @@ window.submitNewReq = async function() {
     }
 
     if (assigneeVal === 'davis.design.ai') {
-        const { error: aiError } = await window.supabase.functions.invoke('uat-ai-design', {
-            body: { task_id: newId, action: 'analyze' }
-        });
-        if (aiError) {
+        try {
+            await startAutomaticAnalysis(window.supabase, newId);
+        } catch (aiError) {
             window.showToast('AI 启动失败', '工单已创建，可稍后重试 AI 接单。', 'danger');
         }
     }
