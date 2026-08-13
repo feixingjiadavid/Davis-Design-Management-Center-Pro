@@ -116,7 +116,7 @@
     async function renderDetail(){
       const task=selected();if(!task)return;
       let state={sources:[],analysis:null,clarifications:[],generations:[]},stateError='';
-      try{state=await loadAiRequirementState(supabase,task.id)}catch(e){stateError=e.message}
+      try{state=await loadAiRequirementState(supabase,task.id,task.link)}catch(e){stateError=e.message}
       const demo=[...state.generations].reverse().find(g=>g.kind==='demo');
       const final=[...state.generations].reverse().find(g=>g.kind==='final');
       paintPipeline(task.status,Boolean(demo));
