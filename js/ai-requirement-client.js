@@ -12,7 +12,17 @@ export function newIdempotencyKey() {
   return crypto.randomUUID();
 }
 
-export async function loadAiRequirementState(supabase, taskId) {
+export function selectActiveSources(sources, activeSourceUrl) {
+  const currentUrl = String(activeSourceUrl || '').trim();
+  return sources.filter(source => source.source_type !== 'tencent_doc' || (currentUrl && source.source_url === currentUrl));
+}
+
+export function selectCurrentAnalysis(analyses) {
+  const latest = analyses?.[0] || null;
+  return latest?.status === 'stale' ? null : latest;
+}
+
+export async function loadAiRequirementState(supabase, taskId, activeSourceUrl = '') {
   const [sourcesResult, analysesResult, clarificationsResult, generationsResult] = await Promise.all([
     supabase.from('uat_requirement_sources').select('*,uat_source_snapshots!uat_source_snapshots_source_id_fkey(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_requirement_analyses').select('*').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
@@ -22,8 +32,8 @@ export async function loadAiRequirementState(supabase, taskId) {
   const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error;
   if (error) throw error;
   return {
-    sources: sourcesResult.data || [],
-    analysis: analysesResult.data?.[0] || null,
+    sources: selectActiveSources(sourcesResult.data || [], activeSourceUrl),
+    analysis: selectCurrentAnalysis(analysesResult.data || []),
     clarifications: clarificationsResult.data || [],
     generations: generationsResult.data || [],
   };
