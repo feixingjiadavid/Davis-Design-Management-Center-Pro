@@ -55,3 +55,7 @@ export async function invokeAiAction(supabase, taskId, action, payload = {}) {
   if (!data?.ok) throw new Error(data?.error || 'AI 流程执行失败');
   return data;
 }
+
+export async function startAutomaticAnalysis(supabase, taskId) {
+  return await invokeAiAction(supabase, taskId, 'auto_analyze');
+}
