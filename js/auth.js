@@ -41,9 +41,11 @@ window.handleLogin = async function(e) {
         return; 
     }
 
-    // 核心要求：登录后写入 metadata，跳转大厅
-    localStorage.setItem('activeUserObj', JSON.stringify(data.user.user_metadata));
-    window.location.href = 'index.html'; 
+    // 登录后保存身份，并为 UAT AI 设计师分流到专属工作台。
+    const metadata = data.user.user_metadata || {};
+    localStorage.setItem('activeUserObj', JSON.stringify(metadata));
+    const isUatAiDesigner = enName === 'davis.design.ai' || metadata.account_type === 'uat_ai_designer';
+    window.location.href = isUatAiDesigner ? 'ai-designer-workspace.html' : 'index.html'; 
 }
 
 // ================= 注册页逻辑 (register.html) =================
