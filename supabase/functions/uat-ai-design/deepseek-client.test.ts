@@ -52,6 +52,22 @@ test("reports DeepSeek HTTP errors", async () => {
   await assert.rejects(() => callDeepSeekRequirementModel("prompt", { apiKey: "key", model: "deepseek-v4-flash" }, async () => new Response("rate limited", { status: 429 })), /DEEPSEEK_HTTP_429/);
 });
 
+test("uses the authorized formal-project proxy when no local API key is present", async () => {
+  let request: Request | undefined;
+  const result = await callDeepSeekRequirementModel("分析需求", {
+    apiKey: "",
+    model: "deepseek-v4-flash",
+    proxyUrl: "https://formal.supabase.co/functions/v1/uat-deepseek-proxy",
+    userJwt: "uat-jwt",
+  }, async (input, init) => {
+    request = new Request(input, init);
+    return Response.json({ ok: true, content: JSON.stringify(validBrief), usage: { total_tokens: 88 } });
+  });
+  assert.equal(request?.headers.get("authorization"), "Bearer uat-jwt");
+  assert.equal(result.brief.goal, validBrief.goal);
+  assert.equal(result.usage.total_tokens, 88);
+});
+
 test("rejects empty, truncated, and invalid JSON responses", async () => {
   await assert.rejects(() => callDeepSeekRequirementModel("prompt", { apiKey: "key", model: "deepseek-v4-flash" }, async () => Response.json({ choices: [{ message: { content: "" }, finish_reason: "stop" }] })), /DEEPSEEK_EMPTY_RESPONSE/);
   await assert.rejects(() => callDeepSeekRequirementModel("prompt", { apiKey: "key", model: "deepseek-v4-flash" }, async () => Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "length" }] })), /DEEPSEEK_RESPONSE_TRUNCATED/);

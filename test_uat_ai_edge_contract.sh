@@ -12,6 +12,8 @@ rg -q 'callDeepSeekRequirementModel' supabase/functions/uat-ai-design/analysis-s
 rg -q 'DEEPSEEK_API_KEY' supabase/functions/uat-ai-design/analysis-service.ts
 rg -q 'deepseek-v4-flash' supabase/functions/uat-ai-design/analysis-service.ts
 rg -q 'DEEPSEEK_MODEL_NOT_CONFIGURED' supabase/functions/uat-ai-design/index.ts
+rg -q 'uat-deepseek-proxy' supabase/functions/uat-ai-design/analysis-service.ts
+rg -q 'analyzeRequirement(admin, task, jwt)' supabase/functions/uat-ai-design/index.ts
 if rg -q 'CLOUDFLARE_REQUIREMENT_MODEL' supabase/functions/uat-ai-design/analysis-service.ts; then
   echo 'requirement analysis must use DeepSeek, not Cloudflare' >&2
   exit 1

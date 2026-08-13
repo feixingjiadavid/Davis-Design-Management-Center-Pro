@@ -6,6 +6,8 @@
 
 **Architecture:** Add a focused DeepSeek OpenAI-compatible HTTP client beside the existing provider clients. `analysis-service.ts` reads `DEEPSEEK_API_KEY` and `DEEPSEEK_REQUIREMENT_MODEL`, calls the new client, validates the same `RequirementBrief`, and persists the actual DeepSeek model name. The existing Cloudflare Demo and Seedream final-image paths remain unchanged.
 
+**Authorized deployment note:** The DeepSeek key was found to be available only to the formal Supabase project. With explicit user authorization, the implementation keeps that key in place and adds `uat-deepseek-proxy`, which verifies the original UAT JWT against UAT Auth and permits only the four UAT test accounts. The proxy has no formal-database access path in its request flow.
+
 **Tech Stack:** Supabase Edge Functions, Deno TypeScript, DeepSeek Chat Completions JSON Output, Node test runner, GitHub Pages.
 
 ## Global Constraints

@@ -23,6 +23,30 @@ export function buildRequirementPrompt(
 5. OpenTalk 必须先判断是“预告”还是“回顾”，只能推荐同类型模板。
 6. 不允许删减来源中的正文。
 
+严格输出以下 JSON 对象结构，必须保留全部字段；没有内容的列表填写 []，未知截止日期填写空字符串：
+${JSON.stringify({
+  goal: "一句话说明设计目标",
+  success_criteria: ["验收标准"],
+  audience: ["目标受众"],
+  deliverables: [{ type: "产出类型", quantity: 1 }],
+  channels: ["投放渠道"],
+  dimensions: ["画布尺寸"],
+  copy: ["必须保留的文案"],
+  visual_direction: ["视觉方向"],
+  layout_plan: ["版式/页面规划"],
+  required_assets: ["所需素材"],
+  constraints: ["限制条件"],
+  deadline: "YYYY-MM-DD 或空字符串",
+  facts: [{ key: "事实字段", value: "事实值", source_type: "form_fields 或 tencent_doc", source_id: "来源 ID", locator: "需求单字段名或文档定位" }],
+  recommendations: [{ value: "建议内容", label: "AI建议" }],
+  missing_information: ["缺失信息"],
+  conflicts: ["来源冲突"],
+  risks: ["执行风险"],
+  confidence: 0.8,
+  clarification_questions: ["需要需求方回答的具体问题"],
+  template_recommendations: [{ template_id: "仅使用可选模板中真实存在的 ID", reason: "匹配原因" }],
+}, null, 2)}
+
 任务记录：
 ${JSON.stringify(task)}
 

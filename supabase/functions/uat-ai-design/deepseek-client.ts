@@ -3,6 +3,8 @@ import { validateRequirementBrief } from "./requirement-schema.ts";
 export interface DeepSeekConfig {
   apiKey: string;
   model: string;
+  proxyUrl?: string;
+  userJwt?: string;
 }
 
 export async function callDeepSeekRequirementModel(
@@ -10,15 +12,16 @@ export async function callDeepSeekRequirementModel(
   config: DeepSeekConfig,
   fetcher: typeof fetch = fetch,
 ) {
-  if (!config.apiKey || !config.model) throw new Error("DEEPSEEK_MODEL_NOT_CONFIGURED");
-  const response = await fetcher("https://api.deepseek.com/chat/completions", {
+  if (!config.model || (!config.apiKey && (!config.proxyUrl || !config.userJwt))) throw new Error("DEEPSEEK_MODEL_NOT_CONFIGURED");
+  const usingProxy = !config.apiKey;
+  const response = await fetcher(usingProxy ? config.proxyUrl! : "https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${config.apiKey}`,
+      authorization: `Bearer ${usingProxy ? config.userJwt : config.apiKey}`,
       "content-type": "application/json",
     },
     signal: AbortSignal.timeout(60_000),
-    body: JSON.stringify({
+    body: JSON.stringify(usingProxy ? { prompt, model: config.model } : {
       model: config.model,
       temperature: 0.1,
       stream: false,
@@ -32,9 +35,15 @@ export async function callDeepSeekRequirementModel(
       response_format: { type: "json_object" },
     }),
   });
-  if (!response.ok) throw new Error(`DEEPSEEK_HTTP_${response.status}`);
+  if (!response.ok) {
+    if (usingProxy) {
+      const errorPayload = await response.json().catch(() => ({}));
+      throw new Error(errorPayload?.error || `DEEPSEEK_PROXY_HTTP_${response.status}`);
+    }
+    throw new Error(`DEEPSEEK_HTTP_${response.status}`);
+  }
   const payload = await response.json();
-  const choice = payload?.choices?.[0];
+  const choice = usingProxy ? { message: { content: payload?.content }, finish_reason: "stop" } : payload?.choices?.[0];
   if (choice?.finish_reason === "length") throw new Error("DEEPSEEK_RESPONSE_TRUNCATED");
   const content = choice?.message?.content;
   if (typeof content !== "string" || !content.trim()) throw new Error("DEEPSEEK_EMPTY_RESPONSE");

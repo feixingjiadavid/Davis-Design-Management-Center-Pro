@@ -110,7 +110,7 @@ Deno.serve(async (request) => {
   if (action === "analyze" || action === "reanalyze") {
     try {
       await ingestTaskSources(admin, task, auth.user.id);
-      const analysis = await analyzeRequirement(admin, task);
+      const analysis = await analyzeRequirement(admin, task, jwt);
       const nextStatus = analysis.status === "clarification_required" ? "needs_input" : "understanding_ready";
       history.push({ action: "ai_requirement_analysis", operator: "Davis AI设计师 (UAT)", analysis_id: analysis.id, version: analysis.version, status: analysis.status, time: new Date().toISOString() });
       await admin.from("test_tasks").update({

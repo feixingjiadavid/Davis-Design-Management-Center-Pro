@@ -19,6 +19,9 @@
 - DeepSeek 是外部托管模型，由 Edge Function 通过 OpenAI 兼容 HTTP API 调用；Supabase 内置 AI Session 当前不直接托管 DeepSeek。
 - `DEEPSEEK_API_KEY` 与模型配置保存在 Supabase Edge Function Secrets，通过 `Deno.env.get` 读取。
 - 现有 Supabase Auth JWT、UAT 白名单、RLS 与 service-role 后端写入边界保持不变。
+- 实际密钥保留在正式项目，由 `uat-deepseek-proxy` 代理调用；代理不访问正式业务数据。
+- 代理使用 UAT Auth `/auth/v1/user` 回验调用者 JWT，并只允许四个 UAT 白名单账号。
+- UAT 项目只接收 DeepSeek 结构化输出，不复制或读取正式项目密钥。
 
 ## 数据流
 

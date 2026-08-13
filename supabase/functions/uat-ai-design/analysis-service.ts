@@ -46,7 +46,7 @@ export async function confirmUnderstanding(admin: any, taskId: string, analysisI
   return updated.data;
 }
 
-export async function analyzeRequirement(admin: any, task: Record<string, any>) {
+export async function analyzeRequirement(admin: any, task: Record<string, any>, userJwt: string) {
   const sourceRows = (await admin.from("uat_requirement_sources")
     .select("id,source_type,current_snapshot_id")
     .eq("task_id", task.id)
@@ -88,6 +88,8 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>) 
   const result = await callDeepSeekRequirementModel(prompt, {
     apiKey: Deno.env.get("DEEPSEEK_API_KEY") || "",
     model,
+    proxyUrl: "https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-deepseek-proxy",
+    userJwt,
   });
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
   const version = (current?.version || 0) + 1;
