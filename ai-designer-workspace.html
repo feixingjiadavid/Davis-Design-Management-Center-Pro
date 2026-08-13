@@ -30,10 +30,10 @@
         <span id="cloudStatus" class="text-xs px-3 py-1.5 rounded-full bg-slate-800 text-slate-400">连接 UAT...</span>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="pipeline">
-        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">① AI 接单</div>
-        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">② 理解需求</div>
-        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">③ 生成内部预览</div>
-        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">④ 虚拟领导审核</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">① 读取资料</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">② 理解并追问</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">③ Demo 版本</div>
+        <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">④ Seedream 4.0 成品</div>
         <div class="step rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">⑤ 测试验收</div>
       </div>
     </section>
@@ -56,11 +56,10 @@
 
   <script type="module">
     import { supabase } from './supabase-config.js';
+    import { loadAiRequirementState, invokeAiAction, SOURCE_STATUS_COPY, newIdempotencyKey } from './js/ai-requirement-client.js';
 
     const AI_EMAIL='davis.design.ai@webank.com';
     const TASK_TABLE='test_tasks';
-    const JOB_TABLE='ai_design_jobs';
-    const AI_FUNCTION='uat-ai-design';
     let currentUser=null,tasks=[],selectedId=null,busy=false;
     const $=id=>document.getElementById(id);
     const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -104,36 +103,44 @@
       document.querySelectorAll('.task').forEach(el=>el.onclick=async()=>{selectedId=el.dataset.id;renderList();await renderDetail()});
     }
 
-    async function getJob(taskId){
-      const {data,error}=await supabase.from(JOB_TABLE).select('*').eq('task_id',taskId).maybeSingle();
-      if(error)throw error;return data;
+    const listHtml=(items,empty='未识别')=>(items&&items.length?'<ul class="space-y-1">'+items.map(item=>'<li>• '+esc(typeof item==='string'?item:(item.value||item.type||JSON.stringify(item)))+'</li>').join('')+'</ul>':'<span class="text-slate-500">'+empty+'</span>');
+    function sourceCards(sources){
+      if(!sources.length)return '<p class="text-sm text-slate-500">尚未建立资料快照。</p>';
+      return '<div class="space-y-3">'+sources.map(source=>{const snapshot=(source.uat_source_snapshots||[]).find(item=>item.id===source.current_snapshot_id);return '<div class="rounded-lg border border-white/10 bg-slate-950/60 p-3"><div class="flex justify-between gap-3"><span class="text-sm font-bold text-slate-200">'+esc(source.source_type==='form_fields'?'需求单字段':'腾讯文档')+'</span><span class="text-xs '+(source.status==='ready'?'text-emerald-400':'text-amber-300')+'">'+esc(SOURCE_STATUS_COPY[source.status]||source.status)+'</span></div>'+(snapshot?'<p class="text-xs text-slate-500 mt-2">'+snapshot.character_count+' 字 · '+snapshot.table_count+' 表格 · '+snapshot.image_count+' 图片 · '+new Date(snapshot.read_at).toLocaleString()+'</p>':'')+(source.error_message?'<p class="text-xs text-rose-300 mt-2">'+esc(source.error_message)+'</p>':'')+'</div>'}).join('')+'</div>';
     }
-
+    function briefHtml(analysis){
+      if(!analysis)return '<p class="text-sm text-slate-500">尚未生成理解单。AI 读取资料后才会开始分析。</p>';
+      const b=analysis.brief||{};
+      return '<div class="grid md:grid-cols-2 gap-4 text-sm"><div><p class="text-slate-500 mb-1">目标</p><p class="text-white">'+esc(b.goal||'--')+'</p></div><div><p class="text-slate-500 mb-1">置信度</p><p class="text-blue-300">'+esc(Math.round((b.confidence||0)*100))+'%</p></div><div><p class="text-slate-500 mb-1">尺寸</p>'+listHtml(b.dimensions)+'</div><div><p class="text-slate-500 mb-1">渠道</p>'+listHtml(b.channels)+'</div><div><p class="text-slate-500 mb-1">版式规划</p>'+listHtml(b.layout_plan)+'</div><div><p class="text-slate-500 mb-1">禁止项/限制</p>'+listHtml(b.constraints)+'</div></div><div class="mt-4 rounded-lg bg-slate-950 p-3"><p class="text-xs font-bold text-slate-300 mb-2">事实来源</p>'+((b.facts||[]).map(f=>'<p class="text-xs text-slate-400 mb-1">'+esc(f.key)+'：'+esc(f.value)+' <span class="text-blue-400">['+esc(f.source_id)+' / '+esc(f.locator)+']</span></p>').join('')||'<p class="text-xs text-rose-300">没有可追溯事实</p>')+'</div>';
+    }
     async function renderDetail(){
       const task=selected();if(!task)return;
-      let job=null,jobError='';try{job=await getJob(task.id)}catch(e){jobError=e.message}
-      const fw=job?.analysis?.framework,analysis=job?.analysis||{};
-      paintPipeline(task.status,Boolean(fw));
-      const submitted=task.status==='pending_approval';
+      let state={sources:[],analysis:null,clarifications:[],generations:[]},stateError='';
+      try{state=await loadAiRequirementState(supabase,task.id)}catch(e){stateError=e.message}
+      const demo=[...state.generations].reverse().find(g=>g.kind==='demo');
+      const final=[...state.generations].reverse().find(g=>g.kind==='final');
+      paintPipeline(task.status,Boolean(demo));
+      const openQuestions=state.clarifications.filter(q=>q.status==='open');
+      const analysis=state.analysis;
       $('detail').innerHTML='<div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">'+esc(task.id)+'</p><h2 class="text-2xl font-bold text-white mt-2">'+esc(task.title)+'</h2><p class="text-sm text-slate-400 mt-2">'+esc(task.project||'AI UAT')+' · 需求方 '+esc(task.creator||'uat.requester')+'</p></div><span class="px-3 py-1.5 rounded-full bg-blue-950 text-blue-300 text-xs">'+esc(task.status)+'</span></div>'+
       '<div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5"><div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">原始需求</h3><p class="text-sm leading-7 text-slate-300 whitespace-pre-wrap">'+esc(task.full_desc||'未填写需求描述')+'</p></div>'+
-      '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">AI 需求理解</h3>'+(fw?'<div class="grid md:grid-cols-2 gap-4 text-sm"><div><p class="text-slate-500 mb-2">任务类型</p><p class="text-slate-200">'+esc(analysis.task_type)+'</p></div><div><p class="text-slate-500 mb-2">设计模式</p><p class="text-slate-200">'+esc(analysis.design_mode)+'</p></div><div><p class="text-slate-500 mb-2">待确认信息</p><p class="text-amber-300">'+esc((analysis.missing_fields||[]).join('、'))+'</p></div><div><p class="text-slate-500 mb-2">执行计划</p><p class="text-slate-200">'+esc((analysis.execution_plan||[]).join(' → '))+'</p></div></div>':'<p class="text-sm text-slate-500">尚未理解需求。点击下方按钮，AI 将接单、分析并生成内部预览。</p>')+(jobError?'<p class="text-xs text-rose-300 mt-3">AI 作业读取失败：'+esc(jobError)+'</p>':'')+'</div>'+
-      '<div class="flex flex-wrap gap-3"><button id="analyzeBtn" class="btn bg-blue-600 hover:bg-blue-500 text-white">'+(fw?'重新理解并生成预览':'AI 接单并理解需求')+'</button><button id="submitBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950" '+(!fw||submitted?'disabled':'')+'>'+(submitted?'已提交虚拟领导审核':'提交虚拟领导审核')+'</button><button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div>'+
-      '<p class="text-xs text-slate-500">内部预览不会通知正式领导，也不会写入正式环境。</p></div>'+
-      '<div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[520px]"><div class="flex justify-between items-center mb-3"><h3 class="text-sm font-bold text-white">AI 内部预览</h3>'+(fw?'<span class="text-xs text-emerald-400">'+esc(fw.version||'UAT')+'</span>':'')+'</div>'+(fw?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(fw.image_url)+'" alt="AI 生成的内部预览图">':'<div class="h-[450px] flex items-center justify-center text-center text-slate-600"><div><p class="text-3xl mb-3">◫</p><p class="text-sm">生成内部预览后将在这里显示</p></div></div>')+'</div></div>';
-      $('analyzeBtn').onclick=()=>invoke('analyze');$('submitBtn').onclick=()=>invoke('submit_framework');$('retryBtn').onclick=loadTasks;
+      '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">资料读取</h3>'+sourceCards(state.sources)+'</div>'+
+      '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">AI 如何理解需求</h3>'+briefHtml(analysis)+'</div>'+
+      '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">需要补充的问题</h3>'+(openQuestions.length?listHtml(openQuestions.map(q=>q.question)):'<p class="text-sm text-emerald-400">当前没有未回答问题。</p>')+'</div>'+
+      (stateError?'<p class="text-xs text-rose-300">状态读取失败：'+esc(stateError)+'</p>':'')+
+      '<div class="flex flex-wrap gap-3"><button id="readBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white">重新读取资料</button><button id="analyzeBtn" class="btn bg-blue-600 hover:bg-blue-500 text-white">'+(analysis?'重新理解需求':'AI 接单并理解需求')+'</button>'+(analysis?.status==='confirmed'?'<button id="demoBtn" class="btn bg-violet-600 hover:bg-violet-500 text-white">生成 Cloudflare Demo</button>':'')+(demo?.status==='confirmed'?'<button id="finalBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950">生成 Seedream 4.0 成品</button>':'')+'<button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div><p class="text-xs text-slate-500">AI 不会自动重复生成；需求方确认理解单和 Demo 后才能继续。</p></div>'+
+      '<div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Demo 版本</h3>'+(demo?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(demo.output.image_url)+'" alt="AI Demo">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(demo?.error_message||'理解确认后生成低成本 Demo')+'</div>')+'</div><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Seedream 4.0 成品</h3>'+(final?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(final.output.image_url)+'" alt="Seedream 成品">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(final?.error_message||'Demo 确认后才可生成成品')+'</div>')+'</div></div></div>';
+      $('readBtn').onclick=()=>invoke('read_sources');$('analyzeBtn').onclick=()=>invoke(analysis?'reanalyze':'analyze');$('retryBtn').onclick=loadTasks;
+      if($('demoBtn'))$('demoBtn').onclick=()=>invoke('generate_demo',{analysis_id:analysis.id,idempotency_key:newIdempotencyKey()});
+      if($('finalBtn'))$('finalBtn').onclick=()=>invoke('generate_final',{demo_generation_id:demo.id,idempotency_key:newIdempotencyKey()});
     }
 
-    async function invoke(action){
+    async function invoke(action,payload={}){
       if(busy)return;const task=selected();if(!task)return;busy=true;
       const buttons=[...document.querySelectorAll('#detail button')];buttons.forEach(b=>b.disabled=true);
-      notify(action==='analyze'?'AI 正在理解需求并生成内部预览...':'正在提交虚拟领导审核...');
-      try{
-        const {data,error}=await supabase.functions.invoke(AI_FUNCTION,{body:{task_id:task.id,action}});
-        if(error)throw error;if(!data?.ok)throw new Error(data?.error||'AI 流程执行失败');
-        notify(action==='analyze'?'AI 已完成需求理解并生成内部预览':'已提交虚拟领导审核');
-        await loadTasks();
-      }catch(e){notify('操作失败：'+e.message,true);await renderDetail()}finally{busy=false}
+      notify('正在执行：'+action+'…');
+      try{await invokeAiAction(supabase,task.id,action,payload);notify('操作完成');await loadTasks()}
+      catch(e){notify('操作失败：'+e.message,true);await renderDetail()}finally{busy=false}
     }
 
     $('refresh').onclick=loadTasks;

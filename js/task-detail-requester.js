@@ -58,12 +58,81 @@ async function fetchTaskData() {
         calculateRejectThreshold();
         renderStaticInfo();
         renderVersionHistory(); 
-        renderResourceSummary(); 
+        renderResourceSummary();
         renderSmartActionPanel();
         renderTimeline();
+        await renderAiRequirementPanel();
 
     } catch(e) { console.error(e); window.showToast("数据加载失败", e.message, "error"); }
 }
+
+const escapeAiHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+
+async function renderAiRequirementPanel() {
+    const panel = document.getElementById('ai-requirement-panel');
+    const content = document.getElementById('ai-requirement-content');
+    if (!panel || !content || globalTaskData?.assignee !== 'davis.design.ai' || !window.aiRequirementClient) return;
+    panel.classList.remove('hidden');
+    try {
+        const state = await window.aiRequirementClient.loadAiRequirementState(window.supabase, currentTaskId);
+        window.currentAiRequirementState = state;
+        const analysis = state.analysis;
+        const brief = analysis?.brief || {};
+        const openQuestions = state.clarifications.filter((item) => item.status === 'open');
+        const demo = [...state.generations].reverse().find((item) => item.kind === 'demo');
+        const final = [...state.generations].reverse().find((item) => item.kind === 'final');
+        const sourceHtml = state.sources.length ? state.sources.map((source) => `<div class="bg-black/20 border border-white/5 rounded-xl p-3"><div class="flex justify-between gap-3"><span class="font-bold text-zinc-200">${source.source_type === 'form_fields' ? '需求单字段' : '腾讯文档'}</span><span class="${source.status === 'ready' ? 'text-emerald-400' : 'text-amber-400'}">${escapeAiHtml(window.aiRequirementClient.SOURCE_STATUS_COPY[source.status] || source.status)}</span></div>${source.error_message ? `<p class="text-rose-400 mt-2">${escapeAiHtml(source.error_message)}</p>` : ''}</div>`).join('') : '<p class="text-zinc-500">AI 尚未读取资料。</p>';
+        const factHtml = (brief.facts || []).map((fact) => `<li>${escapeAiHtml(fact.key)}：${escapeAiHtml(fact.value)} <span class="text-indigo-400">[${escapeAiHtml(fact.locator)}]</span></li>`).join('');
+        const questionsHtml = openQuestions.map((question) => `<div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3"><p class="text-amber-200">${escapeAiHtml(question.question)}</p><button onclick="window.answerAiClarification('${question.id}')" class="mt-2 px-3 py-1.5 rounded-lg bg-amber-500 text-black font-bold">回答问题</button></div>`).join('');
+        let controls = '<button onclick="window.refreshAiUnderstanding()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold">让 AI 重新读取并理解</button>';
+        if (analysis?.status === 'understanding_ready') controls += `<button onclick="window.confirmAiUnderstanding('${analysis.id}')" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">确认需求理解并生成 Demo</button>`;
+        if (demo?.status === 'ready') controls += `<button onclick="window.confirmAiDemo('${demo.id}')" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">确认 Demo，生成 Seedream 4.0 成品</button>`;
+        content.innerHTML = `<h3 class="text-base font-bold text-white mb-5">AI 如何理解需求</h3><div class="grid md:grid-cols-2 gap-5"><div><p class="text-xs font-bold text-zinc-300 mb-2">资料读取</p><div class="space-y-2">${sourceHtml}</div></div><div><p class="text-xs font-bold text-zinc-300 mb-2">理解结果</p>${analysis ? `<p class="text-white font-bold">${escapeAiHtml(brief.goal || '未识别目标')}</p><p class="mt-2">尺寸：${escapeAiHtml((brief.dimensions || []).join('、') || '待补充')}</p><p>渠道：${escapeAiHtml((brief.channels || []).join('、') || '待补充')}</p><p>置信度：${Math.round((brief.confidence || 0) * 100)}%</p><ul class="mt-2 space-y-1 text-xs">${factHtml}</ul>` : '<p class="text-zinc-500">尚未生成结构化理解单。</p>'}</div></div><div class="mt-5"><p class="text-xs font-bold text-zinc-300 mb-2">需要补充的问题</p><div class="space-y-2">${questionsHtml || '<p class="text-emerald-400">当前没有未回答问题。</p>'}</div></div><div class="mt-5 flex flex-wrap gap-3">${controls}</div>${demo?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Demo 版本</p><img src="${escapeAiHtml(demo.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}${final?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Seedream 4.0 成品</p><img src="${escapeAiHtml(final.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}`;
+    } catch (error) {
+        content.innerHTML = `<p class="text-rose-400">AI 状态读取失败：${escapeAiHtml(error.message)}</p><button onclick="window.renderAiRequirementPanel()" class="mt-3 px-4 py-2 rounded-lg bg-zinc-800 text-white">重试</button>`;
+    }
+}
+
+window.renderAiRequirementPanel = renderAiRequirementPanel;
+
+window.refreshAiUnderstanding = async function() {
+    try {
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'analyze');
+        window.showToast('AI 已处理', '资料读取和需求理解已更新。', 'success');
+        await fetchTaskData();
+    } catch (error) { window.showToast('AI 处理失败', error.message, 'error'); }
+};
+
+window.answerAiClarification = async function(clarificationId) {
+    const answer = window.prompt('请输入对这个问题的明确答案：');
+    if (!answer?.trim()) return;
+    try {
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'answer_clarification', { clarification_id: clarificationId, answer: answer.trim() });
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'reanalyze');
+        window.showToast('补充成功', 'AI 已根据补充信息重新理解需求。', 'success');
+        await fetchTaskData();
+    } catch (error) { window.showToast('提交失败', error.message, 'error'); }
+};
+
+window.confirmAiUnderstanding = async function(analysisId) {
+    if (!window.confirm('确认 AI 对需求的理解无误，并生成低成本 Demo？')) return;
+    try {
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'confirm_understanding', { analysis_id: analysisId });
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'generate_demo', { analysis_id: analysisId, idempotency_key: window.aiRequirementClient.newIdempotencyKey() });
+        window.showToast('Demo 已生成', '请检查构图和信息层级。', 'success');
+        await fetchTaskData();
+    } catch (error) { window.showToast('生成失败', error.message, 'error'); await fetchTaskData(); }
+};
+
+window.confirmAiDemo = async function(generationId) {
+    if (!window.confirm('确认这个 Demo？继续后将调用 Seedream 4.0 生成收费成品，不会自动重试。')) return;
+    try {
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'confirm_demo', { generation_id: generationId });
+        await window.aiRequirementClient.invokeAiAction(window.supabase, currentTaskId, 'generate_final', { demo_generation_id: generationId, idempotency_key: window.aiRequirementClient.newIdempotencyKey() });
+        window.showToast('成品已生成', 'Seedream 4.0 成品等待验收。', 'success');
+        await fetchTaskData();
+    } catch (error) { window.showToast('成品生成失败', error.message, 'error'); await fetchTaskData(); }
+};
 
 function calculateRejectThreshold() {
     currentRejectCount = 0;
