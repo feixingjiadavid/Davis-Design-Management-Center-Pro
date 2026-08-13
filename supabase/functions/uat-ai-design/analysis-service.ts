@@ -12,6 +12,11 @@ export function selectOpenTalkTemplates<T extends { template_family?: string; te
   return templates.filter((template) => template.template_family === "OpenTalk" && template.template_type === type);
 }
 
+export function selectCurrentTaskSources<T extends { source_type: string; source_url?: string | null }>(rows: T[], taskLink?: string | null) {
+  const currentLink = String(taskLink || "").trim();
+  return rows.filter((row) => row.source_type !== "tencent_doc" || (currentLink && row.source_url === currentLink));
+}
+
 export function assertUnderstandingCanBeConfirmed(status: string, openClarificationCount: number) {
   if (status !== "understanding_ready") throw new Error("ANALYSIS_NOT_READY_FOR_CONFIRMATION");
   if (openClarificationCount > 0) throw new Error("OPEN_CLARIFICATIONS_REMAIN");
@@ -47,11 +52,12 @@ export async function confirmUnderstanding(admin: any, taskId: string, analysisI
 }
 
 export async function analyzeRequirement(admin: any, task: Record<string, any>, userJwt: string) {
-  const sourceRows = (await admin.from("uat_requirement_sources")
-    .select("id,source_type,current_snapshot_id")
+  const allSourceRows = (await admin.from("uat_requirement_sources")
+    .select("id,source_type,source_url,current_snapshot_id")
     .eq("task_id", task.id)
     .eq("status", "ready")
     .not("current_snapshot_id", "is", null)).data || [];
+  const sourceRows = selectCurrentTaskSources(allSourceRows, task.link);
   if (sourceRows.length === 0) throw new Error("SOURCE_REQUIRED");
   const snapshotIds = sourceRows.map((source: any) => source.current_snapshot_id);
   const snapshots = (await admin.from("uat_source_snapshots").select("*").in("id", snapshotIds)).data || [];
