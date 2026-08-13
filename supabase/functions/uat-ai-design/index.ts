@@ -1,0 +1,130 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { ingestTaskSources } from "./source-service.ts";
+import { analyzeRequirement, answerClarification, confirmUnderstanding } from "./analysis-service.ts";
+import { confirmDemo, generateDemo, generateFinal } from "./generation-service.ts";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization,apikey,content-type",
+  "Access-Control-Allow-Methods": "POST,OPTIONS",
+};
+const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...CORS, "Content-Type": "application/json" },
+});
+
+Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const url = Deno.env.get("SUPABASE_URL") || "";
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const admin = createClient(url, service, { auth: { persistSession: false } });
+  const jwt = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const { data: auth } = await admin.auth.getUser(jwt);
+  if (!auth.user) return out({ ok: false, error: "Authenticated UAT account required" }, 401);
+  const body = await request.json();
+  const { task_id, action = "analyze" } = body;
+  const actorEmail = String(auth.user.email || "").toLowerCase();
+  const isAiDesigner = actorEmail === "davis.design.ai@webank.com";
+  const isRequesterAutoTrigger = actorEmail === "uat.requester@webank.com" && ["analyze", "reanalyze", "read_sources", "answer_clarification", "confirm_understanding", "generate_demo", "confirm_demo", "generate_final"].includes(action);
+  if (!isAiDesigner && !isRequesterAutoTrigger) return out({ ok: false, error: "UAT AI account or requester auto-trigger required" }, 403);
+  const { data: task } = await admin.from("test_tasks").select("*").eq("id", task_id).single();
+  if (!task || task.assignee !== "davis.design.ai") return out({ ok: false, error: "Task is not assigned to UAT AI" }, 400);
+  if (action === "read_sources") {
+    try {
+      const sources = await ingestTaskSources(admin, task, auth.user.id);
+      await admin.from("uat_audit_log").insert({
+        actor_id: auth.user.id,
+        actor_email: auth.user.email,
+        action: "source_read_completed",
+        task_id,
+        details: { sources },
+      });
+      return out({ ok: true, status: "source_read_completed", sources });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Source ingestion failed";
+      return out({ ok: false, error: message }, 400);
+    }
+  }
+  let history: Array<Record<string, unknown>> = [];
+  try { history = JSON.parse(task.history_json || "[]"); } catch { /* Preserve empty history. */ }
+  if (action === "answer_clarification") {
+    try {
+      const clarification = await answerClarification(admin, task_id, String(body.clarification_id || ""), String(body.answer || ""), auth.user.id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "clarification_answered", task_id, details: { clarification_id: clarification.id } });
+      return out({ ok: true, status: "clarification_answered", clarification });
+    } catch (error) {
+      return out({ ok: false, error: error instanceof Error ? error.message : "Clarification answer failed" }, 400);
+    }
+  }
+  if (action === "confirm_understanding") {
+    try {
+      const analysis = await confirmUnderstanding(admin, task_id, String(body.analysis_id || ""), auth.user.id);
+      await admin.from("test_tasks").update({ status: "ready_for_demo", summary_desc: "需求理解已确认，可以生成 Demo" }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "requirement_understanding_confirmed", task_id, details: { analysis_id: analysis.id, version: analysis.version } });
+      return out({ ok: true, status: "confirmed", analysis });
+    } catch (error) {
+      return out({ ok: false, error: error instanceof Error ? error.message : "Understanding confirmation failed" }, 400);
+    }
+  }
+  if (action === "generate_demo") {
+    try {
+      const generation = await generateDemo(admin, task_id, String(body.analysis_id || ""), String(body.idempotency_key || ""));
+      await admin.from("test_tasks").update({ status: "demo_review", summary_desc: "Cloudflare Demo 已生成，等待需求方确认" }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "demo_generated", task_id, details: { generation_id: generation.id, model: generation.model } });
+      return out({ ok: true, status: generation.status, generation });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Demo generation failed";
+      return out({ ok: false, error: message }, message.includes("NOT_CONFIGURED") ? 503 : 400);
+    }
+  }
+  if (action === "confirm_demo") {
+    try {
+      const generation = await confirmDemo(admin, task_id, String(body.generation_id || ""), auth.user.id);
+      await admin.from("test_tasks").update({ status: "ready_for_final", summary_desc: "Demo 已确认，可以生成 Seedream 4.0 成品" }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "demo_confirmed", task_id, details: { generation_id: generation.id } });
+      return out({ ok: true, status: "confirmed", generation });
+    } catch (error) {
+      return out({ ok: false, error: error instanceof Error ? error.message : "Demo confirmation failed" }, 400);
+    }
+  }
+  if (action === "generate_final") {
+    try {
+      const generation = await generateFinal(admin, task_id, String(body.demo_generation_id || ""), String(body.idempotency_key || ""));
+      await admin.from("test_tasks").update({ status: "final_review", summary_desc: "Seedream 4.0 成品已生成，等待验收", design_img_url: generation.output?.image_url || null }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "final_generated", task_id, details: { generation_id: generation.id, model: generation.model } });
+      return out({ ok: true, status: generation.status, generation });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Final generation failed";
+      return out({ ok: false, error: message }, message.includes("NOT_CONFIGURED") ? 503 : 400);
+    }
+  }
+  if (action === "submit_framework") {
+    const job = (await admin.from("ai_design_jobs").select("*").eq("task_id", task_id).single()).data;
+    const framework = job?.analysis?.framework;
+    if (!framework) return out({ ok: false, error: "Generate preview first" }, 400);
+    history.push({ action: "submit_framework", operator: "Davis AI设计师 (UAT)", version: framework.version, time: new Date().toISOString(), img_url: framework.image_url, desc: "UAT 框架方案提交给虚拟测试领导。" });
+    await admin.from("test_tasks").update({ status: "pending_approval", summary_desc: "UAT 框架待虚拟测试领导审核", design_img_url: framework.image_url, history_json: JSON.stringify(history) }).eq("id", task_id);
+    await admin.from("ai_design_jobs").update({ status: "framework_submitted" }).eq("task_id", task_id);
+    return out({ ok: true, status: "framework_submitted" });
+  }
+  if (action === "analyze" || action === "reanalyze") {
+    try {
+      await ingestTaskSources(admin, task, auth.user.id);
+      const analysis = await analyzeRequirement(admin, task);
+      const nextStatus = analysis.status === "clarification_required" ? "needs_input" : "understanding_ready";
+      history.push({ action: "ai_requirement_analysis", operator: "Davis AI设计师 (UAT)", analysis_id: analysis.id, version: analysis.version, status: analysis.status, time: new Date().toISOString() });
+      await admin.from("test_tasks").update({
+        status: nextStatus,
+        summary_desc: nextStatus === "needs_input" ? "AI 已读取资料，等待需求方补充信息" : "AI 需求理解单已生成，等待需求方确认",
+        history_json: JSON.stringify(history),
+      }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "ai_requirement_analysis", task_id, details: { analysis_id: analysis.id, version: analysis.version, status: analysis.status } });
+      return out({ ok: true, status: analysis.status, analysis });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Requirement analysis failed";
+      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "ai_requirement_analysis_failed", task_id, details: { error: message } });
+      return out({ ok: false, error: message }, message === "CLOUDFLARE_MODEL_NOT_CONFIGURED" ? 503 : 400);
+    }
+  }
+  return out({ ok: false, error: "Unsupported AI workflow action" }, 400);
+});
