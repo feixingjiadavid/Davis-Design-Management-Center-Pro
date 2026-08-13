@@ -167,14 +167,18 @@ window.clearTestData = async function() {
 
 window.cancelTask = async function(taskId) {
     if(!window.supabase) return;
-    window.showConfirm("确认撤销", `确定要彻底撤销并删除需求单 ${taskId} 吗？此操作不可恢复。`, async () => {
+    window.showConfirm("确认撤销", `确定要撤销需求单 ${taskId} 吗？撤销后将移入归档。`, async () => {
         try {
-            const { error } = await window.supabase.from(window.DB_TABLE).delete().eq('id', taskId);
+            const { data, error } = await window.supabase.from(window.DB_TABLE)
+                .update({ status: 'terminated', summary_desc: '需求方已撤销此需求' })
+                .eq('id', taskId)
+                .select('id');
             if (error) throw error;
+            if (!data || data.length === 0) throw new Error('未能更新工单，请刷新后重试');
             const card = document.getElementById('card-' + taskId);
             if(card) card.remove();
-            window.showToast('已撤销', `需求单 ${taskId} 已被彻底删除。`, 'info');
-            setTimeout(async () => { await window.loadTasksFromCloud(true); }, 300);
+            window.showToast('已撤销', `需求单 ${taskId} 已撤销并移入归档。`, 'info');
+            setTimeout(async () => { await window.loadTasksFromCloud(); }, 300);
         } catch(e) { window.showAlert("撤销失败", e.message, "danger"); }
     }, "danger");
 }
@@ -565,6 +569,7 @@ window.markAllAsRead = function(event) {
 }
 
 // ================= 表单与需求提交模块 =================
+let isSubmittingNewReq = false;
 window.openModal = function(modalId, isEdit = false) {
     const overlay = document.getElementById('modal-overlay');
     overlay.classList.remove('hidden');
@@ -718,6 +723,7 @@ window.deleteDraft = function(event, btn) {
 
 window.submitNewReq = async function() {
     if(!window.supabase) return window.showAlert("系统错误", "云端服务仍在初始化，请稍等！", "danger");
+    if (isSubmittingNewReq) return;
 
     const shortTitle = document.getElementById('req-short-title').value.trim();
     const fullDesc = document.getElementById('req-title').value.trim();
@@ -726,6 +732,7 @@ window.submitNewReq = async function() {
     const dateInput = document.getElementById('req-date').value;
 
     if(!shortTitle || !fullDesc || !projectVal || !dateInput) return window.showAlert("校验失败", "带星号的为必填项！", "danger");
+    isSubmittingNewReq = true;
     
     const selectedChannels = Array.from(document.querySelectorAll('.req-channel:checked')).map(cb => cb.value);
     const otherChannelText = document.getElementById('req-channel-other').value.trim();
@@ -780,9 +787,20 @@ window.submitNewReq = async function() {
     btn.disabled = false;
 
     if (error) {
+        isSubmittingNewReq = false;
         return window.showAlert("写入失败", error.message, "danger");
     }
 
+    if (assigneeVal === 'davis.design.ai') {
+        const { error: aiError } = await window.supabase.functions.invoke('uat-ai-design', {
+            body: { task_id: newId, action: 'analyze' }
+        });
+        if (aiError) {
+            window.showToast('AI 启动失败', '工单已创建，可稍后重试 AI 接单。', 'danger');
+        }
+    }
+
+    isSubmittingNewReq = false;
     localStorage.removeItem('myDraftTask');
     window.closeAllModals();
     
