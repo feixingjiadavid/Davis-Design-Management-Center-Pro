@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertUnderstandingCanBeConfirmed, decideAnalysisStatus, selectOpenTalkTemplates } from "./analysis-service.ts";
+import { assertUnderstandingCanBeConfirmed, decideAnalysisStatus, selectCurrentTaskSources, selectOpenTalkTemplates } from "./analysis-service.ts";
 import { validateRequirementBrief } from "./requirement-schema.ts";
 
 const validBrief = {
@@ -55,4 +55,16 @@ test("separates OpenTalk announcement and recap templates", () => {
 test("blocks understanding confirmation while clarification remains open", () => {
   assert.throws(() => assertUnderstandingCanBeConfirmed("understanding_ready", 1), /OPEN_CLARIFICATIONS_REMAIN/);
   assert.doesNotThrow(() => assertUnderstandingCanBeConfirmed("understanding_ready", 0));
+});
+
+test("uses only the Tencent source from the task's current link", () => {
+  const rows = [
+    { id: "form", source_type: "form_fields", source_url: null },
+    { id: "old", source_type: "tencent_doc", source_url: "https://docs.qq.com/doc/old" },
+    { id: "current", source_type: "tencent_doc", source_url: "https://docs.qq.com/doc/current" },
+  ];
+  assert.deepEqual(
+    selectCurrentTaskSources(rows, "https://docs.qq.com/doc/current").map((row) => row.id),
+    ["form", "current"],
+  );
 });
