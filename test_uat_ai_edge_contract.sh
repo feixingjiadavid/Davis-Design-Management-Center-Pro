@@ -8,6 +8,13 @@ rg -q 'analyzeRequirement' supabase/functions/uat-ai-design/index.ts
 rg -q 'generateDemo' supabase/functions/uat-ai-design/index.ts
 rg -q 'confirmDemo' supabase/functions/uat-ai-design/index.ts
 rg -q 'generateFinal' supabase/functions/uat-ai-design/index.ts
+rg -q 'callDeepSeekRequirementModel' supabase/functions/uat-ai-design/analysis-service.ts
+rg -q 'DEEPSEEK_API_KEY' supabase/functions/uat-ai-design/analysis-service.ts
+rg -q 'deepseek-v4-flash' supabase/functions/uat-ai-design/analysis-service.ts
+if rg -q 'CLOUDFLARE_REQUIREMENT_MODEL' supabase/functions/uat-ai-design/analysis-service.ts; then
+  echo 'requirement analysis must use DeepSeek, not Cloudflare' >&2
+  exit 1
+fi
 if rg -q '企业内部文化活动设计' supabase/functions/uat-ai-design/index.ts; then
   echo 'fixed analysis fallback must be removed' >&2
   exit 1

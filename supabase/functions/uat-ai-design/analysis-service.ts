@@ -1,4 +1,4 @@
-import { callCloudflareRequirementModel } from "./cloudflare-client.ts";
+import { callDeepSeekRequirementModel } from "./deepseek-client.ts";
 import { buildRequirementPrompt, REQUIREMENT_PROMPT_VERSION } from "./requirement-prompt.ts";
 import type { RequirementBrief } from "./requirement-schema.ts";
 
@@ -84,12 +84,10 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>) 
     .eq("status", "answered")
     .order("answered_at", { ascending: true })).data || [];
   const prompt = buildRequirementPrompt({ ...task, answered_clarifications: answeredClarifications }, sources, templates);
-  const model = Deno.env.get("CLOUDFLARE_REQUIREMENT_MODEL") || "";
-  const result = await callCloudflareRequirementModel(prompt, {
-    accountId: Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "",
-    apiToken: Deno.env.get("CLOUDFLARE_API_TOKEN") || "",
+  const model = Deno.env.get("DEEPSEEK_REQUIREMENT_MODEL") || "deepseek-v4-flash";
+  const result = await callDeepSeekRequirementModel(prompt, {
+    apiKey: Deno.env.get("DEEPSEEK_API_KEY") || "",
     model,
-    gatewayId: Deno.env.get("CLOUDFLARE_AI_GATEWAY_ID") || undefined,
   });
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
   const version = (current?.version || 0) + 1;
