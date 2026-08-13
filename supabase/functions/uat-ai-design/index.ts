@@ -123,7 +123,7 @@ Deno.serve(async (request) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Requirement analysis failed";
       await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "ai_requirement_analysis_failed", task_id, details: { error: message } });
-      return out({ ok: false, error: message }, message === "CLOUDFLARE_MODEL_NOT_CONFIGURED" ? 503 : 400);
+      return out({ ok: false, error: message }, message === "DEEPSEEK_MODEL_NOT_CONFIGURED" ? 503 : 400);
     }
   }
   return out({ ok: false, error: "Unsupported AI workflow action" }, 400);
