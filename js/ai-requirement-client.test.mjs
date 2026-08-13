@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { selectActiveSources, selectCurrentAnalysis } from './ai-requirement-client.js';
+import { selectActiveSources, selectCurrentAnalysis, selectCurrentClarifications } from './ai-requirement-client.js';
 
 test('shows only the Tencent source matching the task current link', () => {
   const sources = [
@@ -17,4 +17,10 @@ test('shows only the Tencent source matching the task current link', () => {
 test('does not display a stale requirement analysis', () => {
   assert.equal(selectCurrentAnalysis([{ id: 'old-analysis', status: 'stale' }]), null);
   assert.equal(selectCurrentAnalysis([{ id: 'new-analysis', status: 'understanding_ready' }])?.id, 'new-analysis');
+});
+
+test('does not display clarification questions from a stale analysis', () => {
+  const questions = [{ id: 'old-question', analysis_id: 'old-analysis', status: 'open' }];
+  assert.deepEqual(selectCurrentClarifications(questions, null), []);
+  assert.deepEqual(selectCurrentClarifications(questions, { id: 'new-analysis' }), []);
 });
