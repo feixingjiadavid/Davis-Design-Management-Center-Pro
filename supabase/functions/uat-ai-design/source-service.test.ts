@@ -32,6 +32,21 @@ test("does not treat a login page as document content", async () => {
   assert.equal(result.status, "authorization_required");
 });
 
+test("does not treat the Tencent editor shell as document content", async () => {
+  const html = `<!doctype html><html><head><title>2026-TIG合作社-宣传文案</title></head><body>
+    <div>个人 只能查看 登录腾讯文档 菜单 菜单 插入 插入 正文 正文 默认字体 默认字体
+    四号 四号 快捷工具 PDF转换 生成图片 排版美化 打印
+    __WEBLAYOUT_STATUSBAR_ICON_PLACEHOLDER__ 100% 正在同步内容...</div>
+  </body></html>`;
+  const result = await readTencentPublic(
+    "https://docs.qq.com/doc/public-shell",
+    async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+  );
+  assert.equal(result.status, "authorization_required");
+  if (result.status === "ready") return;
+  assert.equal(result.errorCode, "TENCENT_OFFICIAL_AUTH_REQUIRED");
+});
+
 test("extracts visible public document text and statistics", async () => {
   const html = `<!doctype html><html><head><title>2026 TIG 合作社</title></head><body>
     <main><h1>宣传页设计</h1><p>渠道：小蓝书</p><table><tr><td>尺寸</td><td>1242×1660</td></tr></table><img alt="活动主视觉"></main>
