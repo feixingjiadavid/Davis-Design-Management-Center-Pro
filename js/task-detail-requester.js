@@ -301,6 +301,7 @@ function renderVersionHistory() {
 
 function renderSmartActionPanel() {
     const status = globalTaskData.status;
+    const workflowState = window.aiRequirementClient?.getRequesterWorkflowState(status) || { kind: 'active' };
     const enName = currentUser.enName.toLowerCase();
     const dispName = currentUser.displayName || currentUser.cnName || currentUser.enName;
     
@@ -323,7 +324,20 @@ function renderSmartActionPanel() {
     else if(isCreator) { hTag.innerText = "身份: 需求提单方"; sRole.innerText = "需求方"; }
     else { hTag.innerText = "身份: 外部旁观者"; sRole.innerText = "只读访问"; }
 
-    if (status === 'pending' || status === 'pending_accept') {
+    if (workflowState.kind === 'needs_input') {
+        sCol = 'amber'; sText = 'AI 等待您补充信息';
+        sIcon = `<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4"></path><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>`;
+        pnlClasses = 'bg-[#18150d] border border-amber-500/30 rounded-3xl p-7 shadow-2xl relative overflow-hidden';
+        pnlHtml = `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-amber-500"></div><h3 class="text-[16px] font-bold text-amber-400 mb-3">AI 设计师需要您补充需求信息</h3><p class="text-[12px] text-zinc-300 leading-relaxed mb-6">请在下方“AI 如何理解需求”区域回答问题。提交后 AI 会自动重新理解，不会在未出图时结束任务。</p><button onclick="document.getElementById('ai-requirement-panel')?.scrollIntoView({behavior:'smooth',block:'start'})" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-[13px] font-bold">前往回答 AI 问题</button>`;
+    } else if (workflowState.kind === 'understanding_ready') {
+        sCol = 'indigo'; sText = 'AI 理解单待确认';
+        sIcon = `<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`;
+        pnlHtml = `<h3 class="text-[16px] font-bold text-indigo-400 mb-3">AI 已形成需求理解单</h3><p class="text-[12px] text-zinc-400 leading-relaxed">请检查下方理解结果；确认后才会进入 Demo 出图阶段。</p>`;
+    } else if (workflowState.kind === 'analysis_failed') {
+        sCol = 'rose'; sText = 'AI 理解失败待重试';
+        sIcon = `<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+        pnlHtml = `<h3 class="text-[16px] font-bold text-rose-400 mb-3">AI 需求理解失败</h3><p class="text-[12px] text-zinc-400 leading-relaxed">任务仍在进行中，请在下方重新触发读取与理解。</p>`;
+    } else if (status === 'pending' || status === 'pending_accept') {
         sCol = 'sky'; sText = status==='pending'?'排队统筹中':'待设计接单';
         sIcon = `<svg class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
         
@@ -457,9 +471,9 @@ function renderSmartActionPanel() {
             <button onclick="window.actionUrge(this)" class="w-full py-3.5 bg-[#1a1a24] hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white rounded-xl text-[13px] font-bold transition-all btn-press">催促设计尽快重传</button>
         `;
 
-    } else {
-        sCol = status==='terminated'?'rose':'zinc'; sText = status==='terminated'?'已强行终止 (废弃)':'任务已圆满结项';
-        sIcon = status==='terminated'?`<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`:`<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else if (workflowState.kind === 'completed' || workflowState.kind === 'terminated') {
+        sCol = workflowState.kind === 'terminated'?'rose':'zinc'; sText = workflowState.kind === 'terminated'?'已强行终止 (废弃)':'任务已圆满结项';
+        sIcon = workflowState.kind === 'terminated'?`<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`:`<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
         
         pnlClasses = 'bg-[#121217] border border-white/10 rounded-3xl p-7 shadow-xl relative overflow-hidden opacity-60';
         pnlHtml = `
@@ -468,6 +482,10 @@ function renderSmartActionPanel() {
             <p class="text-[12px] text-zinc-400 leading-relaxed mb-6">该需求的所有生命周期已闭环。源文件及设计稿已数字存档，若需下载请点击左侧画廊中对应版本的提取按钮。</p>
             <button onclick="window.location.href='index.html'" class="w-full py-3.5 bg-[#1a1a24] border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-white rounded-xl text-[13px] font-bold transition-all btn-press">返回大厅</button>
         `;
+    } else {
+        sCol = 'sky'; sText = '任务进行中';
+        sIcon = `<svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9" opacity=".25"></circle><path d="M21 12a9 9 0 0 0-9-9"></path></svg>`;
+        pnlHtml = `<h3 class="text-[16px] font-bold text-sky-400 mb-3">任务仍在流转中</h3><p class="text-[12px] text-zinc-400 leading-relaxed">当前状态：${escapeAiHtml(status)}。尚未完成出图与验收，系统不会将任务标记为结项。</p>`;
     }
 
     hBadge.innerHTML = `${sIcon} ${sText}`;
