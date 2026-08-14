@@ -48,6 +48,9 @@ if (typeof window !== 'undefined') {
   import('./js/ai-auto-recovery.js?v=uat-state-recovery-v46b')
     .then(module => module.bootstrapAiAutoRecovery(supabase))
     .catch(error => console.error('AI 自动恢复模块加载失败:', error));
+  import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1')
+    .then(module => module.bootstrapAiConfidenceCopy())
+    .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
