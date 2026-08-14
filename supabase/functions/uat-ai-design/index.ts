@@ -2,8 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { ingestTaskSources } from "./source-service.ts";
 import { analyzeRequirement, answerClarification, confirmUnderstanding } from "./analysis-service.ts";
 import { confirmDemo, generateDemo, generateFinal } from "./generation-service.ts";
-import { isAutomaticAnalysisAction } from "./workflow-actions.ts";
-import { delegateSoftQuestions, requesterAck, saveRequesterAnswers } from "./clarification-chat.ts";
+import { isAutomaticAnalysisAction, shouldRefreshSourcesForAction } from "./workflow-actions.ts";
+import { delegateSoftQuestions, requesterAck, saveAiProcessingAck, saveRequesterAnswers } from "./clarification-chat.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
   try { history = JSON.parse(task.history_json || "[]"); } catch { /* Preserve empty history. */ }
   const executeAnalysis = async () => {
     try {
-      await ingestTaskSources(admin, task, auth.user.id);
+      if (shouldRefreshSourcesForAction(action)) await ingestTaskSources(admin, task, auth.user.id);
       const analysis = await analyzeRequirement(admin, task, jwt);
       const nextStatus = analysis.status === "clarification_required" ? "needs_input" : "understanding_ready";
       history.push({ action: "ai_requirement_analysis", operator: "Davis AI设计师 (UAT)", analysis_id: analysis.id, version: analysis.version, status: analysis.status, time: new Date().toISOString() });
@@ -78,6 +78,7 @@ Deno.serve(async (request) => {
       const message = action === "answer_clarifications"
         ? await saveRequesterAnswers(admin, task_id, body.answers || [], String(body.message || ""), clientRequestId, auth.user.id)
         : await delegateSoftQuestions(admin, task_id, clientRequestId, auth.user.id);
+      await saveAiProcessingAck(admin, task_id, clientRequestId, action);
       history.push({ action: "ai_clarification_answered", operator: "UAT 需求方", reply: "已补充 AI 需求信息，AI 正在重新理解", time: new Date().toISOString() });
       await admin.from("test_tasks").update({ status: "processing", summary_desc: "AI 已收到补充信息，正在重新理解需求", history_json: JSON.stringify(history) }).eq("id", task_id);
       EdgeRuntime.waitUntil(executeAnalysis());
