@@ -99,7 +99,21 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     .select("sender_role,message_type,content,created_at")
     .eq("task_id", task.id)
     .order("created_at", { ascending: true })).data || [];
-  const prompt = buildRequirementPrompt({ ...task, answered_clarifications: answeredClarifications, clarification_chat: chatMessages }, sources, templates);
+  const visualReferences = (await admin.from("uat_visual_references")
+    .select("file_name,note,is_primary,sort_order")
+    .eq("task_id", task.id)
+    .order("sort_order", { ascending: true })).data || [];
+  const prompt = buildRequirementPrompt({
+    ...task,
+    answered_clarifications: answeredClarifications,
+    clarification_chat: chatMessages,
+    visual_references: visualReferences.map((item: any, index: number) => ({
+      index,
+      file_name: item.file_name,
+      note: item.note,
+      is_primary: item.is_primary,
+    })),
+  }, sources, templates);
   const model = Deno.env.get("DEEPSEEK_REQUIREMENT_MODEL") || "deepseek-v4-flash";
   const result = await callDeepSeekRequirementModel(prompt, {
     apiKey: Deno.env.get("DEEPSEEK_API_KEY") || "",
@@ -109,7 +123,6 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
   });
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
   const version = (current?.version || 0) + 1;
-  const status = decideAnalysisStatus(result.brief);
   const clarificationRound = ((await admin.from("uat_requirement_analyses").select("id", { count: "exact", head: true }).eq("task_id", task.id).eq("status", "clarification_required")).count || 0) + 1;
   const boundedQuestions = selectBoundedQuestions(result.brief.clarification_questions, clarificationRound);
   if (result.brief.clarification_questions.length > 0 && boundedQuestions.length === 0) {
