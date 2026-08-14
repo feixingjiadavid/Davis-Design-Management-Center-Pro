@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { selectActiveSources, selectCurrentAnalysis, selectCurrentClarifications } from './ai-requirement-client.js';
+import { edgeFunctionForAction, selectActiveSources, selectCurrentAnalysis, selectCurrentClarifications } from './ai-requirement-client.js';
 
 test('shows only the Tencent source matching the task current link', () => {
   const sources = [
@@ -23,4 +23,10 @@ test('does not display clarification questions from a stale analysis', () => {
   const questions = [{ id: 'old-question', analysis_id: 'old-analysis', status: 'open' }];
   assert.deepEqual(selectCurrentClarifications(questions, null), []);
   assert.deepEqual(selectCurrentClarifications(questions, { id: 'new-analysis' }), []);
+});
+
+test('routes paid Seedream final generation through dedicated secure function', () => {
+  assert.equal(edgeFunctionForAction('generate_final'), 'uat-seedream-final');
+  assert.equal(edgeFunctionForAction('generate_demo'), 'uat-ai-design');
+  assert.equal(edgeFunctionForAction('auto_analyze'), 'uat-ai-design');
 });

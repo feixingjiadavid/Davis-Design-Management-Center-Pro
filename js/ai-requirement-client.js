@@ -12,6 +12,10 @@ export function newIdempotencyKey() {
   return crypto.randomUUID();
 }
 
+export function edgeFunctionForAction(action) {
+  return action === 'generate_final' ? 'uat-seedream-final' : 'uat-ai-design';
+}
+
 export function getRequesterWorkflowState(status) {
   if (status === 'completed' || status === 'archived') return { kind: 'completed' };
   if (status === 'terminated') return { kind: 'terminated' };
@@ -113,7 +117,7 @@ export async function delegateClarificationsToAi(supabase, taskId, clientRequest
 export async function invokeAiAction(supabase, taskId, action, payload = {}) {
   const body = { task_id: taskId, action, ...payload };
   if (action === 'generate_demo' || action === 'generate_final') body.idempotency_key = payload.idempotency_key || newIdempotencyKey();
-  const { data, error } = await supabase.functions.invoke('uat-ai-design', { body });
+  const { data, error } = await supabase.functions.invoke(edgeFunctionForAction(action), { body });
   if (error) throw error;
   if (!data?.ok) throw new Error(data?.error || 'AI 流程执行失败');
   return data;
