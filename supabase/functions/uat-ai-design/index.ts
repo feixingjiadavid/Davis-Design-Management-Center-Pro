@@ -7,7 +7,7 @@ import { delegateSoftQuestions, requesterAck, saveRequesterAnswers } from "./cla
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization,apikey,content-type",
+  "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-client-info",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
 };
 const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
