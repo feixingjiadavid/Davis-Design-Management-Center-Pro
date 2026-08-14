@@ -101,6 +101,23 @@ window.scheduleAiChatRefresh = function() {
     aiChatRefreshTimer = setTimeout(async () => { await fetchTaskData(); }, 2000);
 };
 
+window.selectAiChoice = function(button) {
+    const group = button.closest('[data-ai-choice-group]');
+    const input = group?.previousElementSibling;
+    if (!input?.matches('[data-ai-question]')) return;
+    input.value = button.dataset.aiChoiceValue || '';
+    group.querySelectorAll('[data-ai-choice-value]').forEach((item) => {
+        const selected = item === button;
+        item.classList.toggle('bg-indigo-600', selected);
+        item.classList.toggle('border-indigo-400', selected);
+        item.classList.toggle('text-white', selected);
+        item.classList.toggle('shadow-[0_0_18px_rgba(79,70,229,0.22)]', selected);
+        item.classList.toggle('bg-white/[0.03]', !selected);
+        item.classList.toggle('border-white/10', !selected);
+        item.classList.toggle('text-zinc-300', !selected);
+    });
+};
+
 window.submitAiChatAnswers = async function() {
     const fields = [...document.querySelectorAll('[data-ai-question]')];
     const answers = fields.filter((field) => field.value.trim()).map((field) => ({ clarification_id: field.dataset.aiQuestion, answer: field.value.trim() }));
