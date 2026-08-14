@@ -10,3 +10,35 @@ export function renderMessageBubble(message, escapeHtml) {
   const mine = message.sender_role === 'requester';
   return `<div class="flex ${mine ? 'justify-end' : 'justify-start'}"><div class="max-w-[85%] rounded-2xl px-4 py-3 ${mine ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-200'}"><p class="text-sm whitespace-pre-wrap">${escapeHtml(message.content)}</p>${message.pending ? '<p class="text-[10px] opacity-70 mt-1">发送中…</p>' : ''}</div></div>`;
 }
+
+export function inferAnswerControl(question) {
+  const text = String(question || '');
+  if (/(日期|哪一天|几月几日|时间)/.test(text)) return 'date';
+  if (/(几张|多少张|数量|几个|多少个)/.test(text)) return 'number';
+  if (/(是否|需不需要|要不要|可否|能否)/.test(text)) return 'choice';
+  if (/(链接|网址|URL)/i.test(text)) return 'url';
+  if (/(标题|名称|姓名|联系人)/.test(text) && !/(详细|说明|描述|原因)/.test(text)) return 'text';
+  return 'textarea';
+}
+
+export function renderQuestionControl(question, index, escapeHtml) {
+  const id = escapeHtml(question.id);
+  const prompt = escapeHtml(question.question);
+  const type = inferAnswerControl(question.question);
+  const base = 'mt-3 w-full rounded-xl bg-black/30 border border-white/10 p-3 text-sm text-white outline-none focus:border-amber-400';
+  let control = '';
+  if (type === 'choice') {
+    control = `<select data-ai-question="${id}" class="${base}"><option value="">请选择</option><option value="是">是</option><option value="否">否</option><option value="交给AI决定">不确定，交给 AI 决定</option></select>`;
+  } else if (type === 'number') {
+    control = `<input data-ai-question="${id}" type="number" min="0" step="1" class="${base}" placeholder="请输入数量">`;
+  } else if (type === 'date') {
+    control = `<input data-ai-question="${id}" type="date" class="${base}">`;
+  } else if (type === 'url') {
+    control = `<input data-ai-question="${id}" type="url" class="${base}" placeholder="https://">`;
+  } else if (type === 'text') {
+    control = `<input data-ai-question="${id}" type="text" class="${base}" placeholder="请输入明确答案">`;
+  } else {
+    control = `<textarea data-ai-question="${id}" class="${base} min-h-[88px]" placeholder="请输入答案；不确定可填写“交给AI决定”"></textarea>`;
+  }
+  return `<label class="block bg-amber-500/5 border border-amber-500/20 rounded-xl p-4"><span class="text-amber-200 text-sm">${index + 1}. ${prompt}</span>${control}</label>`;
+}
