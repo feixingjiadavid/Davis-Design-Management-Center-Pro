@@ -213,6 +213,9 @@ window.createTaskHTML = function(task, currentUser) {
         case 'pending_accept': sColor = 'text-amber-400'; sText = '待接单'; break;
         case 'pending_approval': sColor = 'text-amber-500'; sText = '框架待审批'; break;
         case 'processing': sColor = 'text-orange-500'; sText = '设计制作中'; break;
+        case 'needs_input': sColor = 'text-amber-400'; sText = task.open_ai_questions ? `AI 等待你补充 ${task.open_ai_questions} 个问题` : 'AI 等待你补充信息'; isUrgent = true; break;
+        case 'understanding_ready': sColor = 'text-indigo-400'; sText = 'AI 理解单待确认'; break;
+        case 'analysis_failed': sColor = 'text-rose-500'; sText = 'AI 理解失败待重试'; isUrgent = true; break;
         case 'completed': 
         case 'archived': sColor = 'text-zinc-400'; sText = '已完结'; break;
         case 'terminated': sColor = 'text-rose-700'; sText = '已强行终止'; break;
@@ -325,6 +328,12 @@ window.loadTasksFromCloud = async function(isSilent = false) {
         if(!isSilent && timelineC) timelineC.innerHTML = '';
 
         const allData = [...(ongoingRes.data || []), ...(completedRes.data || [])];
+        const aiNeedsInputIds = allData.filter(task => task.assignee === 'davis.design.ai' && task.status === 'needs_input').map(task => task.id);
+        if (aiNeedsInputIds.length) {
+            const { data: openQuestions } = await window.supabase.from('uat_clarifications').select('task_id').in('task_id', aiNeedsInputIds).eq('status', 'open');
+            const counts = (openQuestions || []).reduce((map, row) => (map[row.task_id] = (map[row.task_id] || 0) + 1, map), {});
+            allData.forEach(task => { if (counts[task.id]) task.open_ai_questions = counts[task.id]; });
+        }
         
         let ongoingCount = 0;
         let completedCount = 0;
@@ -448,6 +457,9 @@ window.syncNotificationsFromCloud = async function() {
                 if(h.action === 'transfer') { actionText = '转移了需求执行人'; iconDot = 'bg-orange-500'; }
                 if(h.action === 'accept') { actionText = '已接单并开始制作'; iconDot = 'bg-sky-500'; }
                 if(h.action === 'create') { actionText = '向大厅发起了新需求'; iconDot = 'bg-indigo-500'; }
+                if(h.action === 'ai_requirement_analysis' && h.status === 'clarification_required') { actionText = 'AI 设计师需要你补充需求信息'; iconDot = 'bg-amber-500'; }
+                if(h.action === 'ai_requirement_analysis' && h.status === 'understanding_ready') { actionText = 'AI 已完成需求理解，等待你确认'; iconDot = 'bg-indigo-500'; }
+                if(h.action === 'ai_clarification_answered') { actionText = '你已补充信息，AI 正在重新理解'; iconDot = 'bg-sky-500'; }
 
                 myUnreadNotifs.push({
                     eventId: eventId,
