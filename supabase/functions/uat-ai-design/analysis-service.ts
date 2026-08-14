@@ -105,6 +105,10 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     .select("id,file_name,note,is_primary,sort_order,updated_at")
     .eq("task_id", task.id)
     .order("sort_order", { ascending: true })).data || [];
+  const designAssets = (await admin.from("uat_design_assets")
+    .select("id,file_name,asset_role,note,sort_order,updated_at")
+    .eq("task_id", task.id)
+    .order("sort_order", { ascending: true })).data || [];
 
   let visualReferenceAnalysis: any = null;
   if (visualReferences.length > 0) {
@@ -123,6 +127,13 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
       note: item.note,
       is_primary: item.is_primary,
     })),
+    design_assets: designAssets.map((item: any, index: number) => ({
+      index: index + 1,
+      id: item.id,
+      file_name: item.file_name,
+      asset_role: item.asset_role,
+      note: item.note,
+    })),
     visual_reference_analysis: visualReferenceAnalysis?.analysis || null,
   }, sources, templates);
 
@@ -138,6 +149,7 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     ...result.brief,
     visual_reference_analysis: visualReferenceAnalysis?.analysis || null,
     visual_reference_model: visualReferenceAnalysis?.model || null,
+    design_assets: designAssets.map((item: any) => ({ id: item.id, file_name: item.file_name, asset_role: item.asset_role, note: item.note })),
   } as RequirementBrief & Record<string, unknown>;
 
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
@@ -164,6 +176,7 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
       ...(result.usage || {}),
       visual_model: visualReferenceAnalysis?.model || null,
       visual_reference_count: visualReferences.length,
+      design_asset_count: designAssets.length,
       visual_analysis_cached: visualReferenceAnalysis?.cached ?? null,
     },
   }).select("*").single();
