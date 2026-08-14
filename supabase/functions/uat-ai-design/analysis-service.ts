@@ -1,6 +1,7 @@
 import { callDeepSeekRequirementModel } from "./deepseek-client.ts";
 import { buildRequirementPrompt, REQUIREMENT_PROMPT_VERSION } from "./requirement-prompt.ts";
 import type { RequirementBrief } from "./requirement-schema.ts";
+import { classifyQuestion, selectBoundedQuestions } from "./clarification-policy.ts";
 
 export function decideAnalysisStatus(brief: RequirementBrief) {
   return brief.missing_information.length > 0 || brief.conflicts.length > 0 || brief.clarification_questions.length > 0
@@ -89,7 +90,11 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     .eq("task_id", task.id)
     .eq("status", "answered")
     .order("answered_at", { ascending: true })).data || [];
-  const prompt = buildRequirementPrompt({ ...task, answered_clarifications: answeredClarifications }, sources, templates);
+  const chatMessages = (await admin.from("uat_clarification_messages")
+    .select("sender_role,message_type,content,created_at")
+    .eq("task_id", task.id)
+    .order("created_at", { ascending: true })).data || [];
+  const prompt = buildRequirementPrompt({ ...task, answered_clarifications: answeredClarifications, clarification_chat: chatMessages }, sources, templates);
   const model = Deno.env.get("DEEPSEEK_REQUIREMENT_MODEL") || "deepseek-v4-flash";
   const result = await callDeepSeekRequirementModel(prompt, {
     apiKey: Deno.env.get("DEEPSEEK_API_KEY") || "",
@@ -100,11 +105,20 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
   const version = (current?.version || 0) + 1;
   const status = decideAnalysisStatus(result.brief);
+  const clarificationRound = ((await admin.from("uat_requirement_analyses").select("id", { count: "exact", head: true }).eq("task_id", task.id).eq("status", "clarification_required")).count || 0) + 1;
+  const boundedQuestions = selectBoundedQuestions(result.brief.clarification_questions, clarificationRound);
+  if (result.brief.clarification_questions.length > 0 && boundedQuestions.length === 0) {
+    result.brief.clarification_questions = [];
+    result.brief.missing_information = result.brief.missing_information.filter((item: string) => classifyQuestion(item) === "hard");
+  } else {
+    result.brief.clarification_questions = boundedQuestions;
+  }
+  const boundedStatus = decideAnalysisStatus(result.brief);
   const inserted = await admin.from("uat_requirement_analyses").insert({
     task_id: task.id,
     snapshot_ids: snapshotIds,
     version,
-    status,
+    status: boundedStatus,
     model,
     prompt_version: REQUIREMENT_PROMPT_VERSION,
     brief: result.brief,
@@ -112,12 +126,13 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     usage: result.usage,
   }).select("*").single();
   if (inserted.error) throw inserted.error;
+  await admin.from("uat_clarifications").update({ status: "superseded", closed_reason: "new_analysis_version" }).eq("task_id", task.id).eq("status", "open").neq("analysis_id", inserted.data.id);
   if (result.brief.clarification_questions.length > 0) {
-    await admin.from("uat_clarifications").insert(result.brief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open" })));
+    await admin.from("uat_clarifications").insert(result.brief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open", round: clarificationRound, question_type: classifyQuestion(question) })));
   }
   await admin.from("ai_design_jobs").upsert({
     task_id: task.id,
-    status: status === "clarification_required" ? "needs_input" : "ready_for_generation",
+    status: boundedStatus === "clarification_required" ? "needs_input" : "ready_for_generation",
     request_snapshot: task,
     analysis: { requirement_analysis_id: inserted.data.id, version, brief: result.brief },
     attempt_count: 1,
