@@ -9,3 +9,10 @@ test("instructs DeepSeek with every required JSON field and an output example", 
   }
   assert.match(prompt, /严格输出以下 JSON 对象结构/);
 });
+
+test("treats 小蓝书 as a fixed 1242x1660 business preset", () => {
+  const prompt = buildRequirementPrompt({ id: "TK-1", channels: ["小蓝书"] }, [], []);
+  assert.match(prompt, /小蓝书/);
+  assert.match(prompt, /1242x1660px/);
+  assert.match(prompt, /不得追问尺寸/);
+});
