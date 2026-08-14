@@ -1,8 +1,15 @@
+export interface RequirementPage {
+  index: number;
+  title: string;
+  copy: string[];
+}
+
 export interface RequirementBrief {
   goal: string;
   success_criteria: string[];
   audience: string[];
   deliverables: Array<{ type: string; quantity: number }>;
+  pages: RequirementPage[];
   channels: string[];
   dimensions: string[];
   copy: string[];
@@ -31,6 +38,7 @@ export const REQUIREMENT_BRIEF_JSON_SCHEMA = {
     success_criteria: stringArray,
     audience: stringArray,
     deliverables: { type: "array", items: { type: "object", additionalProperties: false, properties: { type: { type: "string" }, quantity: { type: "integer", minimum: 1 } }, required: ["type", "quantity"] } },
+    pages: { type: "array", items: { type: "object", additionalProperties: false, properties: { index: { type: "integer", minimum: 1 }, title: { type: "string" }, copy: stringArray }, required: ["index", "title", "copy"] } },
     channels: stringArray,
     dimensions: stringArray,
     copy: stringArray,
@@ -48,7 +56,7 @@ export const REQUIREMENT_BRIEF_JSON_SCHEMA = {
     clarification_questions: stringArray,
     template_recommendations: { type: "array", items: { type: "object", additionalProperties: false, properties: { template_id: { type: "string" }, reason: { type: "string" } }, required: ["template_id", "reason"] } },
   },
-  required: ["goal", "success_criteria", "audience", "deliverables", "channels", "dimensions", "copy", "visual_direction", "layout_plan", "required_assets", "constraints", "deadline", "facts", "recommendations", "missing_information", "conflicts", "risks", "confidence", "clarification_questions", "template_recommendations"],
+  required: ["goal", "success_criteria", "audience", "deliverables", "pages", "channels", "dimensions", "copy", "visual_direction", "layout_plan", "required_assets", "constraints", "deadline", "facts", "recommendations", "missing_information", "conflicts", "risks", "confidence", "clarification_questions", "template_recommendations"],
 } as const;
 
 function requireStringArray(value: unknown, key: string) {
@@ -60,6 +68,14 @@ export function validateRequirementBrief(value: unknown): RequirementBrief {
   const brief = value as Record<string, unknown>;
   if (typeof brief.goal !== "string" || !brief.goal.trim()) throw new Error("GOAL_REQUIRED");
   for (const key of ["success_criteria", "audience", "channels", "dimensions", "copy", "visual_direction", "layout_plan", "required_assets", "constraints", "missing_information", "conflicts", "risks", "clarification_questions"]) requireStringArray(brief[key], key);
+  if (!Array.isArray(brief.pages)) throw new Error("INVALID_PAGES");
+  const pages = brief.pages as Array<Record<string, unknown>>;
+  pages.forEach((page, offset) => {
+    if (!Number.isInteger(page.index) || Number(page.index) !== offset + 1) throw new Error("INVALID_PAGE_INDEX");
+    if (typeof page.title !== "string" || !page.title.trim()) throw new Error("PAGE_TITLE_REQUIRED");
+    requireStringArray(page.copy, "page_copy");
+    if ((page.copy as string[]).length === 0) throw new Error("PAGE_COPY_REQUIRED");
+  });
   if (typeof brief.deadline !== "string") throw new Error("INVALID_DEADLINE");
   if (typeof brief.confidence !== "number" || brief.confidence < 0 || brief.confidence > 1) throw new Error("INVALID_CONFIDENCE");
   if (!Array.isArray(brief.facts)) throw new Error("INVALID_FACTS");
