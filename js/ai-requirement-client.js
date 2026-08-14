@@ -12,6 +12,15 @@ export function newIdempotencyKey() {
   return crypto.randomUUID();
 }
 
+export function getRequesterWorkflowState(status) {
+  if (status === 'completed' || status === 'archived') return { kind: 'completed' };
+  if (status === 'terminated') return { kind: 'terminated' };
+  if (status === 'needs_input') return { kind: 'needs_input' };
+  if (status === 'understanding_ready') return { kind: 'understanding_ready' };
+  if (status === 'analysis_failed') return { kind: 'analysis_failed' };
+  return { kind: 'active' };
+}
+
 export function selectActiveSources(sources, activeSourceUrl) {
   const currentUrl = String(activeSourceUrl || '').trim();
   return sources.filter(source => source.source_type !== 'tencent_doc' || (currentUrl && source.source_url === currentUrl));
