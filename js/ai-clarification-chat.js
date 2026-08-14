@@ -13,6 +13,8 @@ export function renderMessageBubble(message, escapeHtml) {
 
 export function inferAnswerControl(question) {
   const text = String(question || '');
+  const questionCount = (text.match(/[？?]/g) || []).length;
+  if (questionCount > 1 || /(还是|分别)/.test(text)) return 'textarea';
   if (/(日期|哪一天|几月几日|时间)/.test(text)) return 'date';
   if (/(几张|多少张|数量|几个|多少个)/.test(text)) return 'number';
   if (/(是否|需不需要|要不要|可否|能否)/.test(text)) return 'choice';
@@ -28,7 +30,9 @@ export function renderQuestionControl(question, index, escapeHtml) {
   const base = 'mt-3 w-full rounded-xl bg-black/30 border border-white/10 p-3 text-sm text-white outline-none focus:border-amber-400';
   let control = '';
   if (type === 'choice') {
-    control = `<select data-ai-question="${id}" class="${base}"><option value="">请选择</option><option value="是">是</option><option value="否">否</option><option value="交给AI决定">不确定，交给 AI 决定</option></select>`;
+    const options = ['是', '否', '部分需要', '交给AI决定'];
+    const buttons = options.map((value) => `<button type="button" data-ai-choice-value="${value}" onclick="window.selectAiChoice(this)" class="px-4 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] text-zinc-300 hover:text-white hover:border-indigo-400/60 hover:bg-indigo-500/10 transition-all">${value === '交给AI决定' ? '不确定，交给 AI 决定' : value}</button>`).join('');
+    control = `<input data-ai-question="${id}" type="hidden" value=""><div class="mt-3 flex flex-wrap gap-2" data-ai-choice-group>${buttons}</div>`;
   } else if (type === 'number') {
     control = `<input data-ai-question="${id}" type="number" min="0" step="1" class="${base}" placeholder="请输入数量">`;
   } else if (type === 'date') {
