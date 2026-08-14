@@ -60,9 +60,9 @@ if (typeof window !== 'undefined') {
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
   import('./js/seedream-demo-ui-copy.js?v=seedream-demo-v1')
     .catch(error => console.error('Seedream Demo 工作台文案模块加载失败:', error));
-  import('./js/seedream-demo-recovery.js?v=seedream-demo-recovery-v1')
+  import('./js/seedream-demo-recovery.js?v=seedream-demo-progress-v2')
     .then(module => module.bootstrapSeedreamDemoRecovery(supabase))
-    .catch(error => console.error('Seedream Demo 恢复入口加载失败:', error));
+    .catch(error => console.error('Seedream Demo 实时进度模块加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
