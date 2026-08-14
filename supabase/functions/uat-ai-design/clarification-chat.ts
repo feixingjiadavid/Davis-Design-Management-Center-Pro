@@ -17,6 +17,25 @@ export function requesterAck(messageId: string) {
   return { ok: true, status: "processing", message_id: messageId, reply: "AI 已收到，正在理解" };
 }
 
+export async function saveAiProcessingAck(admin: any, taskId: string, clientRequestId: string, action: string) {
+  const ackRequestId = `${clientRequestId}:ai-ack`;
+  const existing = (await admin.from("uat_clarification_messages").select("id").eq("task_id", taskId).eq("client_request_id", ackRequestId).maybeSingle()).data;
+  if (existing) return existing;
+  const content = action === "delegate_to_ai"
+    ? "收到，我会按历史模板和专业判断补齐这些信息，现在继续处理。"
+    : "收到你的补充，我正在结合已有资料重新判断需求；有结果会马上在这里回复。";
+  const inserted = await admin.from("uat_clarification_messages").insert({
+    task_id: taskId,
+    sender_role: "ai_designer",
+    message_type: "status",
+    content,
+    client_request_id: ackRequestId,
+    metadata: { status: "processing" },
+  }).select("id").single();
+  if (inserted.error) throw inserted.error;
+  return inserted.data;
+}
+
 export async function saveRequesterAnswers(admin: any, taskId: string, answersInput: unknown, message: string, clientRequestId: string, userId: string) {
   const answers = normalizeAnswers(answersInput);
   if (!clientRequestId.trim()) throw new Error("CLIENT_REQUEST_ID_REQUIRED");
