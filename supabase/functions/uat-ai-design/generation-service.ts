@@ -14,8 +14,9 @@ export async function executeIdempotent<T>(existing: T | null, provider: () => P
   return existing ?? await provider();
 }
 
-function demoPrompt(brief: Record<string, unknown>) {
-  return `根据已经由需求方确认的需求理解单生成低成本版式 Demo。只验证构图、信息层级和风格方向；正文必须完整，不输出成品级细节。\n${JSON.stringify(brief)}`;
+export function demoPrompt(brief: Record<string, unknown>) {
+  const compactBrief = JSON.stringify(brief).slice(0, 1200);
+  return `根据已经由需求方确认的需求理解单生成低成本版式 Demo。只验证构图、信息层级和风格方向；正文必须完整，不输出成品级细节。\n${compactBrief}`;
 }
 
 function finalPrompt(brief: Record<string, unknown>, demoOutput: Record<string, unknown>) {
