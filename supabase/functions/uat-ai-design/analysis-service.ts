@@ -9,6 +9,11 @@ export function decideAnalysisStatus(brief: RequirementBrief) {
     : "understanding_ready";
 }
 
+export function decideBoundedAnalysisStatus(brief: RequirementBrief, clarificationRound: number) {
+  if (clarificationRound > 2 && brief.clarification_questions.length === 0) return "understanding_ready";
+  return decideAnalysisStatus(brief);
+}
+
 export function selectOpenTalkTemplates<T extends { template_family?: string; template_type?: string }>(templates: T[], type: "预告" | "回顾") {
   return templates.filter((template) => template.template_family === "OpenTalk" && template.template_type === type);
 }
@@ -113,7 +118,7 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
   } else {
     result.brief.clarification_questions = boundedQuestions;
   }
-  const boundedStatus = decideAnalysisStatus(result.brief);
+  const boundedStatus = decideBoundedAnalysisStatus(result.brief, clarificationRound);
   const inserted = await admin.from("uat_requirement_analyses").insert({
     task_id: task.id,
     snapshot_ids: snapshotIds,
