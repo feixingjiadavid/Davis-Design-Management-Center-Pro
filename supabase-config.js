@@ -45,7 +45,7 @@ if (typeof window !== 'undefined') {
   import('./js/visual-reference-ui.js?v=uat-qwen-vision-20260814c')
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('视觉参考模块加载失败:', error));
-  import('./js/ai-auto-recovery.js?v=uat-state-recovery-v46')
+  import('./js/ai-auto-recovery.js?v=uat-state-recovery-v46b')
     .then(module => module.bootstrapAiAutoRecovery(supabase))
     .catch(error => console.error('AI 自动恢复模块加载失败:', error));
 }
