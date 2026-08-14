@@ -58,6 +58,8 @@ if (typeof window !== 'undefined') {
   import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
+  import('./js/seedream-demo-ui-copy.js?v=seedream-demo-v1')
+    .catch(error => console.error('Seedream Demo 工作台文案模块加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
