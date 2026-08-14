@@ -14,6 +14,17 @@ export async function executeIdempotent<T>(existing: T | null, provider: () => P
   return existing ?? await provider();
 }
 
+function resolveDemoSize(brief: Record<string, unknown>) {
+  const dimensions = Array.isArray(brief.dimensions) ? brief.dimensions.join(" ") : "";
+  const channels = Array.isArray(brief.channels) ? brief.channels.join(" ") : "";
+  if (channels.includes("小蓝书") || dimensions.includes("1242x1660") || dimensions.includes("1242×1660")) {
+    return { width: 1242, height: 1660 };
+  }
+  const match = dimensions.match(/(\d{3,5})[x×](\d{3,5})/);
+  if (match) return { width: Number(match[1]), height: Number(match[2]) };
+  return { width: 1242, height: 1660 };
+}
+
 export function demoPrompt(brief: Record<string, unknown>) {
   const compactBrief = JSON.stringify(brief).slice(0, 1200);
   return `根据已经由需求方确认的需求理解单生成低成本版式 Demo。只验证构图、信息层级和风格方向；正文必须完整，不输出成品级细节。\n${compactBrief}`;
@@ -39,7 +50,7 @@ export async function generateDemo(admin: any, taskId: string, analysisId: strin
     analysis_id: analysisId,
     kind: "demo",
     model,
-    prompt_version: "demo-layout-v1",
+    prompt_version: "demo-layout-v2",
     idempotency_key: idempotencyKey,
     status: "generating",
   }).select("*").single();
@@ -49,7 +60,8 @@ export async function generateDemo(admin: any, taskId: string, analysisId: strin
     throw queued.error;
   }
   try {
-    const output = await generateCloudflareDemo(demoPrompt(analysis.brief));
+    const size = resolveDemoSize(analysis.brief);
+    const output = await generateCloudflareDemo(demoPrompt(analysis.brief), size);
     const updated = await admin.from("uat_design_generations").update({ status: "ready", output, updated_at: new Date().toISOString() }).eq("id", queued.data.id).select("*").single();
     if (updated.error) throw updated.error;
     return updated.data;
