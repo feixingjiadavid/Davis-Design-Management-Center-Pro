@@ -37,13 +37,14 @@ export function selectCurrentClarifications(clarifications, analysis) {
 }
 
 export async function loadAiRequirementState(supabase, taskId, activeSourceUrl = '') {
-  const [sourcesResult, analysesResult, clarificationsResult, generationsResult] = await Promise.all([
+  const [sourcesResult, analysesResult, clarificationsResult, generationsResult, messagesResult] = await Promise.all([
     supabase.from('uat_requirement_sources').select('*,uat_source_snapshots!uat_source_snapshots_source_id_fkey(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_requirement_analyses').select('*').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
     supabase.from('uat_clarifications').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_design_generations').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
+    supabase.from('uat_clarification_messages').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
   ]);
-  const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error;
+  const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error || messagesResult.error;
   if (error) throw error;
   const analysis = selectCurrentAnalysis(analysesResult.data || []);
   return {
@@ -51,7 +52,16 @@ export async function loadAiRequirementState(supabase, taskId, activeSourceUrl =
     analysis,
     clarifications: selectCurrentClarifications(clarificationsResult.data || [], analysis),
     generations: generationsResult.data || [],
+    messages: messagesResult.data || [],
   };
+}
+
+export async function submitClarificationAnswers(supabase, taskId, answers, message = '', clientRequestId = crypto.randomUUID()) {
+  return await invokeAiAction(supabase, taskId, 'answer_clarifications', { answers, message, client_request_id: clientRequestId });
+}
+
+export async function delegateClarificationsToAi(supabase, taskId, clientRequestId = crypto.randomUUID()) {
+  return await invokeAiAction(supabase, taskId, 'delegate_to_ai', { client_request_id: clientRequestId });
 }
 
 export async function invokeAiAction(supabase, taskId, action, payload = {}) {
