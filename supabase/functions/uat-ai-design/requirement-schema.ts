@@ -63,10 +63,42 @@ function requireStringArray(value: unknown, key: string) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`INVALID_${key.toUpperCase()}`);
 }
 
+function textField(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+export function normalizeRequiredAssets(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error("INVALID_REQUIRED_ASSETS");
+  return value.map((item) => {
+    if (typeof item === "string") return item.trim();
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("INVALID_REQUIRED_ASSETS");
+    const record = item as Record<string, unknown>;
+    const role = textField(record, ["asset_role", "role", "type", "name", "label"]);
+    const fileName = textField(record, ["file_name", "filename", "file", "asset_name"]);
+    const status = textField(record, ["status", "state"]);
+    const note = textField(record, ["note", "description", "usage", "instruction"]);
+    const provided = record.provided === true || /已提供|uploaded|provided/i.test(status);
+    const prefix = provided ? "已提供" : (status || "必用素材");
+    const identity = [role, fileName].filter(Boolean).join(" / ");
+    const normalized = `${prefix}：${identity || note || "未命名素材"}${note && identity ? `（${note}）` : ""}`;
+    return normalized.trim();
+  }).filter(Boolean);
+}
+
 export function validateRequirementBrief(value: unknown): RequirementBrief {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUIREMENT_BRIEF");
   const brief = value as Record<string, unknown>;
   if (typeof brief.goal !== "string" || !brief.goal.trim()) throw new Error("GOAL_REQUIRED");
+
+  // DeepSeek sometimes returns required_assets as structured objects when it has rich
+  // asset metadata. Preserve that useful meaning but normalize it to our stable UI/API
+  // contract instead of failing the entire requirement analysis.
+  brief.required_assets = normalizeRequiredAssets(brief.required_assets);
+
   for (const key of ["success_criteria", "audience", "channels", "dimensions", "copy", "visual_direction", "layout_plan", "required_assets", "constraints", "missing_information", "conflicts", "risks", "clarification_questions"]) requireStringArray(brief[key], key);
   if (!Array.isArray(brief.pages)) throw new Error("INVALID_PAGES");
   const pages = brief.pages as Array<Record<string, unknown>>;
@@ -83,5 +115,5 @@ export function validateRequirementBrief(value: unknown): RequirementBrief {
     if (!fact.source_id || !fact.locator || !String(fact.locator).trim()) throw new Error("FACT_CITATION_REQUIRED");
   }
   if (!Array.isArray(brief.deliverables) || !Array.isArray(brief.recommendations) || !Array.isArray(brief.template_recommendations)) throw new Error("INVALID_REQUIREMENT_LISTS");
-  return value as RequirementBrief;
+  return brief as unknown as RequirementBrief;
 }
