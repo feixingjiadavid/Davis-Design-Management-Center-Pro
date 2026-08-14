@@ -11,6 +11,10 @@
     .task.active{background:#172554;border-color:#3b82f6}.task:hover{border-color:#475569}
     .step.done{color:#86efac;border-color:#166534;background:#052e16}.step.current{color:#bfdbfe;border-color:#2563eb;background:#172554}
     .btn{border:0;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer}.btn:disabled{opacity:.45;cursor:not-allowed}
+    .spin{width:22px;height:22px;border-radius:999px;border:2px solid rgba(96,165,250,.22);border-top-color:#60a5fa;animation:spin .8s linear infinite}
+    .progress-line{position:relative;overflow:hidden;background:rgba(30,64,175,.18)}
+    .progress-line:after{content:"";position:absolute;inset:0;width:42%;background:linear-gradient(90deg,transparent,rgba(96,165,250,.7),transparent);animation:scan 1.35s ease-in-out infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}@keyframes scan{0%{transform:translateX(-120%)}100%{transform:translateX(340%)}}
   </style>
 </head>
 <body class="min-h-screen">
@@ -46,7 +50,7 @@
 
       <section class="glass rounded-2xl p-5 lg:p-7" id="detail">
         <div class="h-full min-h-[520px] flex items-center justify-center text-center">
-          <div><div class="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 mx-auto mb-4 flex items-center justify-center text-blue-400 text-2xl">✦</div><h2 class="font-bold text-white">请选择一条测试需求</h2><p class="text-sm text-slate-500 mt-2">AI 将在这里理解需求、生成内部预览并提交审核。</p></div>
+          <div><div class="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 mx-auto mb-4 flex items-center justify-center text-blue-400 text-2xl">✦</div><h2 class="font-bold text-white">请选择一条测试需求</h2><p class="text-sm text-slate-500 mt-2">AI 将在这里理解需求、自动生成内部预览并提交审核。</p></div>
         </div>
       </section>
     </div>
@@ -60,7 +64,12 @@
 
     const AI_EMAIL='davis.design.ai@webank.com';
     const TASK_TABLE='test_tasks';
-    let currentUser=null,tasks=[],selectedId=null,busy=false;
+    const LIVE_STATUSES=new Set(['processing','understanding_ready','ready_for_demo','generating_demo']);
+    const STATUS_COPY={
+      pending:'等待 AI 接单',pending_accept:'等待 AI 接单',processing:'AI 正在理解需求',needs_input:'等待需求方补充',understanding_ready:'理解完成，自动进入 Demo',ready_for_demo:'AI 正在自动启动 Demo',generating_demo:'Demo 正在生成',demo_review:'Demo 待需求方确认',demo_failed:'Demo 生成失败',ready_for_final:'Demo 已确认',final_review:'成品待验收'
+    };
+    let currentUser=null,tasks=[],selectedId=null,busy=false,refreshTimer=null;
+    const autoResumeTasks=new Set();
     const $=id=>document.getElementById(id);
     const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const notify=(msg,bad=false)=>{const t=$('toast');t.textContent=msg;t.className='fixed right-6 bottom-6 max-w-sm px-5 py-4 rounded-xl border shadow-2xl text-sm z-50 '+(bad?'bg-rose-950 border-rose-700 text-rose-200':'bg-emerald-950 border-emerald-700 text-emerald-200');setTimeout(()=>t.classList.add('hidden'),3500)};
@@ -79,7 +88,7 @@
     function statusIndex(status,hasPreview){
       if(['completed','archived','reviewing'].includes(status))return 4;
       if(['final_review','ready_for_final','pending_approval'].includes(status))return 3;
-      if(hasPreview||['generating_demo','demo_review'].includes(status))return 2;
+      if(hasPreview||['generating_demo','demo_review','demo_failed'].includes(status))return 2;
       if(['processing','needs_input','understanding_ready','ready_for_demo'].includes(status))return 1;
       if(['pending_accept','pending'].includes(status))return 0;
       return 0;
@@ -88,9 +97,10 @@
       const idx=statusIndex(status,hasPreview);
       [...document.querySelectorAll('.step')].forEach((el,i)=>{el.classList.remove('done','current');if(i<idx)el.classList.add('done');else if(i===idx)el.classList.add('current')});
     }
+    function scheduleLiveRefresh(delay=1800){clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>loadTasks(true),delay)}
 
-    async function loadTasks(){
-      $('taskList').innerHTML='<div class="text-sm text-slate-500 py-12 text-center">正在读取测试任务...</div>';
+    async function loadTasks(silent=false){
+      if(!silent)$('taskList').innerHTML='<div class="text-sm text-slate-500 py-12 text-center">正在读取测试任务...</div>';
       const {data,error}=await supabase.from(TASK_TABLE).select('*').eq('assignee','davis.design.ai').order('created_at',{ascending:false});
       if(error){$('taskList').innerHTML='<div class="text-sm text-rose-300 p-4 rounded-xl bg-rose-950/40">任务读取失败。请点击刷新重试。<br><span class="text-xs">'+esc(error.message)+'</span></div>';return}
       tasks=data||[];
@@ -100,7 +110,7 @@
     }
 
     function renderList(){
-      $('taskList').innerHTML=tasks.map(t=>'<button class="task '+(t.id===selectedId?'active':'')+' w-full text-left p-4 rounded-xl border border-slate-800 bg-slate-900/70 transition" data-id="'+esc(t.id)+'"><div class="flex justify-between gap-2"><span class="text-xs font-mono text-blue-400">'+esc(t.id)+'</span><span class="text-[11px] text-slate-500">'+esc(t.status)+'</span></div><h3 class="text-sm font-bold text-white mt-2 line-clamp-2">'+esc(t.title||'未命名测试需求')+'</h3><p class="text-xs text-slate-500 mt-2 line-clamp-2">'+esc(t.summary_desc||t.full_desc||'等待 AI 接单')+'</p></button>').join('');
+      $('taskList').innerHTML=tasks.map(t=>'<button class="task '+(t.id===selectedId?'active':'')+' w-full text-left p-4 rounded-xl border border-slate-800 bg-slate-900/70 transition" data-id="'+esc(t.id)+'"><div class="flex justify-between gap-2"><span class="text-xs font-mono text-blue-400">'+esc(t.id)+'</span><span class="text-[11px] text-slate-500">'+esc(STATUS_COPY[t.status]||t.status)+'</span></div><h3 class="text-sm font-bold text-white mt-2 line-clamp-2">'+esc(t.title||'未命名测试需求')+'</h3><p class="text-xs text-slate-500 mt-2 line-clamp-2">'+esc(t.summary_desc||t.full_desc||'等待 AI 接单')+'</p></button>').join('');
       document.querySelectorAll('.task').forEach(el=>el.onclick=async()=>{selectedId=el.dataset.id;renderList();await renderDetail()});
     }
 
@@ -114,6 +124,35 @@
       const b=analysis.brief||{};
       return '<div class="grid md:grid-cols-2 gap-4 text-sm"><div><p class="text-slate-500 mb-1">目标</p><p class="text-white">'+esc(b.goal||'--')+'</p></div><div><p class="text-slate-500 mb-1">置信度</p><p class="text-blue-300">'+esc(Math.round((b.confidence||0)*100))+'%</p></div><div><p class="text-slate-500 mb-1">尺寸</p>'+listHtml(b.dimensions)+'</div><div><p class="text-slate-500 mb-1">渠道</p>'+listHtml(b.channels)+'</div><div><p class="text-slate-500 mb-1">版式规划</p>'+listHtml(b.layout_plan)+'</div><div><p class="text-slate-500 mb-1">禁止项/限制</p>'+listHtml(b.constraints)+'</div></div><div class="mt-4 rounded-lg bg-slate-950 p-3"><p class="text-xs font-bold text-slate-300 mb-2">事实来源</p>'+((b.facts||[]).map(f=>'<p class="text-xs text-slate-400 mb-1">'+esc(f.key)+'：'+esc(f.value)+' <span class="text-blue-400">['+esc(f.source_id)+' / '+esc(f.locator)+']</span></p>').join('')||'<p class="text-xs text-rose-300">没有可追溯事实</p>')+'</div>';
     }
+    function demoProgressHtml(task,demo,analysis){
+      if(demo?.output?.image_url){
+        const size=demo.output?.size?demo.output.size.width+'×'+demo.output.size.height:'尺寸待校验';
+        return '<div class="space-y-3"><div class="flex items-center justify-between gap-3 text-xs"><span class="text-emerald-400 font-bold">Demo 已生成</span><span class="text-slate-500">'+esc(demo.model||'Cloudflare')+' · '+esc(size)+'</span></div><img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(demo.output.image_url)+'" alt="AI Demo"></div>';
+      }
+      if(task.status==='demo_failed'||demo?.status==='failed'){
+        return '<div class="min-h-[210px] flex items-center justify-center"><div class="w-full rounded-xl border border-rose-500/20 bg-rose-950/20 p-5"><p class="text-sm font-bold text-rose-300">Demo 生成失败</p><p class="text-xs text-rose-200/70 mt-2 break-words">'+esc(demo?.error_message||task.summary_desc||'生成任务失败，等待 AI 排障。')+'</p></div></div>';
+      }
+      if(['ready_for_demo','generating_demo'].includes(task.status)||demo?.status==='generating'){
+        const dimensions=(analysis?.brief?.dimensions||[]).join('、')||'正在解析';
+        const started=task.status==='generating_demo'||demo?.status==='generating';
+        return '<div class="min-h-[210px] flex items-center justify-center"><div class="w-full"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-blue-200">'+(started?'Demo 已开始生成':'AI 设计师正在自动启动 Demo')+'</p><p class="text-xs text-slate-500 mt-1">无需人工点击，AI 会自动完成这一阶段。</p></div></div><div class="progress-line h-1.5 rounded-full mt-5"></div><div class="grid grid-cols-3 gap-2 mt-4 text-[11px]"><div class="rounded-lg border border-emerald-500/20 bg-emerald-950/20 p-2 text-emerald-300">✓ 需求参数已确认</div><div class="rounded-lg border border-blue-500/30 bg-blue-950/30 p-2 text-blue-200">● Cloudflare 生成中</div><div class="rounded-lg border border-white/10 bg-white/[.02] p-2 text-slate-500">○ 等待图片回传</div></div><div class="mt-4 text-xs text-slate-500"><p>目标尺寸：<span class="text-slate-300">'+esc(dimensions)+'</span></p><p class="mt-1">模型：<span class="text-slate-300">'+esc(demo?.model||'Cloudflare Demo 模型')+'</span></p></div></div></div>';
+      }
+      return '<div class="h-[190px] flex items-center justify-center text-center text-slate-600">AI 完成需求理解后会自动生成 Demo</div>';
+    }
+
+    async function autoResumeDemo(task,analysis){
+      if(!task||!analysis?.id||autoResumeTasks.has(task.id))return;
+      autoResumeTasks.add(task.id);
+      task.status='generating_demo';
+      task.summary_desc='AI 设计师正在自动启动 Cloudflare Demo';
+      renderList();paintPipeline('generating_demo',false);
+      scheduleLiveRefresh(600);
+      try{
+        await invokeAiAction(supabase,task.id,'generate_demo',{analysis_id:analysis.id,idempotency_key:newIdempotencyKey()});
+      }catch(e){notify('AI 自动生成 Demo 失败：'+e.message,true)}
+      finally{autoResumeTasks.delete(task.id);await loadTasks(true)}
+    }
+
     async function renderDetail(){
       const task=selected();if(!task)return;
       let state={sources:[],analysis:null,clarifications:[],generations:[]},stateError='';
@@ -124,28 +163,30 @@
       const openQuestions=state.clarifications.filter(q=>q.status==='open');
       const analysis=state.analysis;
       const analysisRetryButton=task.status==='analysis_failed'?'<button id="analyzeBtn" class="btn bg-blue-600 hover:bg-blue-500 text-white">重新尝试理解需求</button>':'';
-      $('detail').innerHTML='<div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">'+esc(task.id)+'</p><h2 class="text-2xl font-bold text-white mt-2">'+esc(task.title)+'</h2><p class="text-sm text-slate-400 mt-2">'+esc(task.project||'AI UAT')+' · 需求方 '+esc(task.creator||'uat.requester')+'</p></div><span class="px-3 py-1.5 rounded-full bg-blue-950 text-blue-300 text-xs">'+esc(task.status)+'</span></div>'+
-      '<div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5"><div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">原始需求</h3><p class="text-sm leading-7 text-slate-300 whitespace-pre-wrap">'+esc(task.full_desc||'未填写需求描述')+'</p></div>'+
+      const activeHint=LIVE_STATUSES.has(task.status)?'<div class="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-blue-200">'+esc(STATUS_COPY[task.status]||'AI 正在自动处理')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(task.summary_desc||'AI 设计师正在继续执行工作流')+'</p></div></div></div>':'';
+      $('detail').innerHTML='<div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">'+esc(task.id)+'</p><h2 class="text-2xl font-bold text-white mt-2">'+esc(task.title)+'</h2><p class="text-sm text-slate-400 mt-2">'+esc(task.project||'AI UAT')+' · 需求方 '+esc(task.creator||'uat.requester')+'</p></div><span class="px-3 py-1.5 rounded-full bg-blue-950 text-blue-300 text-xs">'+esc(STATUS_COPY[task.status]||task.status)+'</span></div>'+
+      '<div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5">'+activeHint+'<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">原始需求</h3><p class="text-sm leading-7 text-slate-300 whitespace-pre-wrap">'+esc(task.full_desc||'未填写需求描述')+'</p></div>'+
       '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">资料读取</h3>'+sourceCards(state.sources)+'</div>'+
       '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">AI 如何理解需求</h3>'+briefHtml(analysis)+'</div>'+
       '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">需要补充的问题</h3>'+(openQuestions.length?listHtml(openQuestions.map(q=>q.question)):'<p class="text-sm text-emerald-400">当前没有未回答问题。</p>')+'</div>'+
       (stateError?'<p class="text-xs text-rose-300">状态读取失败：'+esc(stateError)+'</p>':'')+
-      '<div class="flex flex-wrap gap-3"><button id="readBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white">重新读取资料</button>'+analysisRetryButton+(analysis?.status==='confirmed'&&!demo?'<button id="demoBtn" class="btn bg-violet-600 hover:bg-violet-500 text-white">生成 Cloudflare Demo</button>':'')+(demo?.status==='confirmed'?'<button id="finalBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950">生成 Seedream 4.0 成品</button>':'')+'<button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div><p class="text-xs text-slate-500">AI 会自动读取、理解并生成第一版 Demo；只有成品生成与最终验收需要人工确认。</p></div>'+
-      '<div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Demo 版本</h3>'+(demo?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(demo.output.image_url)+'" alt="AI Demo">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(demo?.error_message||'理解确认后生成低成本 Demo')+'</div>')+'</div><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Seedream 4.0 成品</h3>'+(final?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(final.output.image_url)+'" alt="Seedream 成品">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(final?.error_message||'Demo 确认后才可生成成品')+'</div>')+'</div></div></div>';
-      $('readBtn').onclick=()=>invoke('read_sources');if($('analyzeBtn'))$('analyzeBtn').onclick=()=>invoke('reanalyze');$('retryBtn').onclick=loadTasks;
-      if($('demoBtn'))$('demoBtn').onclick=()=>invoke('generate_demo',{analysis_id:analysis.id,idempotency_key:newIdempotencyKey()});
-      if($('finalBtn'))$('finalBtn').onclick=()=>invoke('generate_final',{demo_generation_id:demo.id,idempotency_key:newIdempotencyKey()});
+      '<div class="flex flex-wrap gap-3"><button id="readBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white">重新读取资料（排障）</button>'+analysisRetryButton+'<button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div><p class="text-xs text-slate-500">正常流程无需 AI 设计师人工点击：读资料、理解需求、追问结束后的 Demo 生成均自动续跑。</p></div>'+
+      '<div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Demo 版本</h3>'+demoProgressHtml(task,demo,analysis)+'</div><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Seedream 4.0 成品</h3>'+(final?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(final.output.image_url)+'" alt="Seedream 成品">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">Demo 经需求方确认后才进入收费成品生成</div>')+'</div></div></div>';
+      $('readBtn').onclick=()=>invoke('read_sources');if($('analyzeBtn'))$('analyzeBtn').onclick=()=>invoke('reanalyze');$('retryBtn').onclick=()=>loadTasks(false);
+
+      if(LIVE_STATUSES.has(task.status)||demo?.status==='generating')scheduleLiveRefresh();
+      if(task.status==='ready_for_demo'&&analysis?.status==='confirmed'&&!demo)setTimeout(()=>autoResumeDemo(task,analysis),0);
     }
 
     async function invoke(action,payload={}){
       if(busy)return;const task=selected();if(!task)return;busy=true;
       const buttons=[...document.querySelectorAll('#detail button')];buttons.forEach(b=>b.disabled=true);
-      notify('正在执行：'+action+'…');
-      try{await invokeAiAction(supabase,task.id,action,payload);notify('操作完成');await loadTasks()}
+      notify('正在执行排障操作：'+action+'…');
+      try{await invokeAiAction(supabase,task.id,action,payload);notify('排障操作完成');await loadTasks(true)}
       catch(e){notify('操作失败：'+e.message,true);await renderDetail()}finally{busy=false}
     }
 
-    $('refresh').onclick=loadTasks;
+    $('refresh').onclick=()=>loadTasks(false);
     $('logout').onclick=async()=>{await supabase.auth.signOut();localStorage.removeItem('activeUserObj');location.href='login.html'};
     if(await guard())await loadTasks();
   </script>
