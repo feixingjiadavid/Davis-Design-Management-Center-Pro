@@ -52,7 +52,7 @@ if (typeof window !== 'undefined') {
     .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-v2'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('设计输入模块加载失败:', error));
-  import('./js/ai-auto-recovery.js?v=uat-state-recovery-v46b')
+  import('./js/ai-auto-recovery.js?v=uat-state-recovery-v48-required-assets')
     .then(module => module.bootstrapAiAutoRecovery(supabase))
     .catch(error => console.error('AI 自动恢复模块加载失败:', error));
   import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
