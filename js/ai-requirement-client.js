@@ -15,6 +15,7 @@ export function newIdempotencyKey() {
 export function getRequesterWorkflowState(status) {
   if (status === 'completed' || status === 'archived') return { kind: 'completed' };
   if (status === 'terminated') return { kind: 'terminated' };
+  if (status === 'waiting_visual_reference') return { kind: 'waiting_visual_reference' };
   if (status === 'needs_input') return { kind: 'needs_input' };
   if (status === 'understanding_ready') return { kind: 'understanding_ready' };
   if (status === 'analysis_failed') return { kind: 'analysis_failed' };
@@ -37,14 +38,15 @@ export function selectCurrentClarifications(clarifications, analysis) {
 }
 
 export async function loadAiRequirementState(supabase, taskId, activeSourceUrl = '') {
-  const [sourcesResult, analysesResult, clarificationsResult, generationsResult, messagesResult] = await Promise.all([
+  const [sourcesResult, analysesResult, clarificationsResult, generationsResult, messagesResult, referencesResult] = await Promise.all([
     supabase.from('uat_requirement_sources').select('*,uat_source_snapshots!uat_source_snapshots_source_id_fkey(*)').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_requirement_analyses').select('*').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
     supabase.from('uat_clarifications').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_design_generations').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
     supabase.from('uat_clarification_messages').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
+    supabase.from('uat_visual_references').select('*').eq('task_id', taskId).order('sort_order', { ascending: true }),
   ]);
-  const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error || messagesResult.error;
+  const error = sourcesResult.error || analysesResult.error || clarificationsResult.error || generationsResult.error || messagesResult.error || referencesResult.error;
   if (error) throw error;
   const analysis = selectCurrentAnalysis(analysesResult.data || []);
   return {
@@ -53,7 +55,41 @@ export async function loadAiRequirementState(supabase, taskId, activeSourceUrl =
     clarifications: selectCurrentClarifications(clarificationsResult.data || [], analysis),
     generations: generationsResult.data || [],
     messages: messagesResult.data || [],
+    visualReferences: referencesResult.data || [],
   };
+}
+
+export async function saveVisualReferences(supabase, taskId, references, { replace = false } = {}) {
+  if (!Array.isArray(references) || references.length < 1 || references.length > 6) throw new Error('视觉参考图需为1-6张');
+  if (replace) {
+    const { error: deleteError } = await supabase.from('uat_visual_references').delete().eq('task_id', taskId);
+    if (deleteError) throw deleteError;
+  }
+  const rows = references.map((reference, index) => ({
+    task_id: taskId,
+    file_name: reference.file_name || `reference-${index + 1}.jpg`,
+    data_url: reference.data_url,
+    note: String(reference.note || ''),
+    is_primary: Boolean(reference.is_primary),
+    sort_order: Number.isInteger(reference.sort_order) ? reference.sort_order : index,
+  }));
+  if (!rows.some(row => row.is_primary)) rows[0].is_primary = true;
+  if (rows.filter(row => row.is_primary).length > 1) rows.forEach((row, index) => { row.is_primary = index === rows.findIndex(item => item.is_primary); });
+  const { data, error } = await supabase.from('uat_visual_references').insert(rows).select('*');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function deleteVisualReference(supabase, taskId, referenceId) {
+  const { error } = await supabase.from('uat_visual_references').delete().eq('task_id', taskId).eq('id', referenceId);
+  if (error) throw error;
+}
+
+export async function setPrimaryVisualReference(supabase, taskId, referenceId) {
+  const { error: clearError } = await supabase.from('uat_visual_references').update({ is_primary: false, updated_at: new Date().toISOString() }).eq('task_id', taskId).eq('is_primary', true);
+  if (clearError) throw clearError;
+  const { error } = await supabase.from('uat_visual_references').update({ is_primary: true, updated_at: new Date().toISOString() }).eq('task_id', taskId).eq('id', referenceId);
+  if (error) throw error;
 }
 
 export async function submitClarificationAnswers(supabase, taskId, answers, message = '', clientRequestId = crypto.randomUUID()) {
@@ -66,9 +102,7 @@ export async function delegateClarificationsToAi(supabase, taskId, clientRequest
 
 export async function invokeAiAction(supabase, taskId, action, payload = {}) {
   const body = { task_id: taskId, action, ...payload };
-  if (action === 'generate_demo' || action === 'generate_final') {
-    body.idempotency_key = payload.idempotency_key || newIdempotencyKey();
-  }
+  if (action === 'generate_demo' || action === 'generate_final') body.idempotency_key = payload.idempotency_key || newIdempotencyKey();
   const { data, error } = await supabase.functions.invoke('uat-ai-design', { body });
   if (error) throw error;
   if (!data?.ok) throw new Error(data?.error || 'AI 流程执行失败');
