@@ -1,6 +1,6 @@
 import type { NormalizedSourceDocument } from "./source-types.ts";
 
-export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v3";
+export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v4";
 
 export function extractExplicitDesignScope(text: string): { marker: string; text: string } | null {
   const normalized = String(text || "").replace(/\r/g, "");
@@ -59,10 +59,11 @@ export function buildRequirementPrompt(
 - 如果需求方另有明确尺寸要求，以需求方明确写出的尺寸为准。
 
 内容作用域规则（最高优先级）：
-- 如果某个来源出现 DESIGN_SCOPE_PRIORITY=EXPLICIT，说明来源作者已经明确标出了“真正要做成设计稿/配图的内容”。deliverables、copy、layout_plan、success_criteria 必须优先且主要依据 DESIGN_SCOPE_BEGIN 与 DESIGN_SCOPE_END 之间的内容。
+- 如果某个来源出现 DESIGN_SCOPE_PRIORITY=EXPLICIT，说明来源作者已经明确标出了“真正要做成设计稿/配图的内容”。deliverables、pages、copy、layout_plan、success_criteria 必须优先且主要依据 DESIGN_SCOPE_BEGIN 与 DESIGN_SCOPE_END 之间的内容。
 - DESIGN_SCOPE 之外的正文、评论区、运营说明、联系人、URL、魔法指令、背景材料只能用于理解上下文；除非需求单或后续有效澄清明确要求加入设计页，否则不得自动塞入设计页。
 - 不得因为全文出现了二维码、联系人、Logo、链接、魔法指令等，就自行把它们升级成 constraints / required_assets / success_criteria。
-- 如果 DESIGN_SCOPE 已经按“第1页/第2页/第3页”列出内容，必须逐页忠实映射，不能擅自合并、拆页、增加额外模块或把其他章节内容挪入这些页面。
+- 如果 DESIGN_SCOPE 已经按“第1页/第2页/第3页”列出内容，pages 必须与 DESIGN_SCOPE 中的页数一一对应，index 从1连续递增，title 使用该页标题，每页 copy 只能来自该页对应内容。
+- 不得擅自合并、拆页、增加额外模块或把其他章节内容挪入这些页面。
 - 逐页文案要保持原意和关键措辞。AI可以在 recommendations 中提出视觉建议，但 recommendations 绝不能伪装成来源要求。
 - 不得把作用域之外的正文、评论区、联系人、链接、魔法指令自动塞进设计页。
 
@@ -75,6 +76,7 @@ export function buildRequirementPrompt(
 6. 必须阅读并理解来源全文；完整正文保留在来源快照，copy 只保留实际需要出现在设计稿上的文字，不要把背景说明混进设计文案。
 7. constraints 只能记录系统硬规则、需求单硬要求或需求方明确确认的限制；AI自己的排版/风格想法一律放 recommendations。
 8. 如果明确设计作用域已经足够确定页面数量、页面标题和页面内容，不要再针对作用域外信息提出追问。
+9. deliverables.quantity 必须与 pages.length 一致；如果 DESIGN_SCOPE 有3页，则必须输出3个 pages，不能只给一个总览。
 
 严格输出以下 JSON 对象结构，必须保留全部字段；没有内容的列表填写 []，未知截止日期填写空字符串：
 ${JSON.stringify({
@@ -82,11 +84,12 @@ ${JSON.stringify({
   success_criteria: ["验收标准"],
   audience: ["目标受众"],
   deliverables: [{ type: "产出类型", quantity: 1 }],
+  pages: [{ index: 1, title: "第1页标题", copy: ["该页必须呈现的原始文案"] }],
   channels: ["投放渠道"],
   dimensions: ["画布尺寸"],
-  copy: ["必须保留的文案"],
+  copy: ["跨页共同必须保留的文案；如无则[]"],
   visual_direction: ["视觉方向"],
-  layout_plan: ["版式/页面规划"],
+  layout_plan: ["逐页版式/信息层级规划"],
   required_assets: ["所需素材"],
   constraints: ["限制条件"],
   deadline: "YYYY-MM-DD 或空字符串",
