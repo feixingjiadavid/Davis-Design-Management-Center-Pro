@@ -1,3 +1,11 @@
+function replacement(value) {
+  const text = String(value || '');
+  if (!text.includes('Cloudflare')) return text;
+  // 历史审计说明必须保留真实模型名，避免“旧 Cloudflare Demo”被误写成“旧 Seedream Demo”。
+  if (text.includes('旧 Cloudflare')) return text;
+  return text.replaceAll('Cloudflare', 'Seedream 4.0');
+}
+
 function replaceCloudflareText(root = document.body) {
   if (!root) return;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -6,8 +14,8 @@ function replaceCloudflareText(root = document.body) {
   for (const node of nodes) {
     const parent = node.parentElement;
     if (!parent || ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) continue;
-    if (!node.nodeValue?.includes('Cloudflare')) continue;
-    node.nodeValue = node.nodeValue.replaceAll('Cloudflare', 'Seedream 4.0');
+    const next = replacement(node.nodeValue);
+    if (next !== node.nodeValue) node.nodeValue = next;
   }
 }
 
@@ -19,14 +27,16 @@ export function bootstrapSeedreamDemoCopy() {
       if (mutation.type === 'characterData') {
         const node = mutation.target;
         const parent = node.parentElement;
-        if (parent && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName) && node.nodeValue?.includes('Cloudflare')) {
-          node.nodeValue = node.nodeValue.replaceAll('Cloudflare', 'Seedream 4.0');
+        if (parent && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) {
+          const next = replacement(node.nodeValue);
+          if (next !== node.nodeValue) node.nodeValue = next;
         }
         continue;
       }
       for (const added of mutation.addedNodes) {
-        if (added.nodeType === Node.TEXT_NODE && added.nodeValue?.includes('Cloudflare')) {
-          added.nodeValue = added.nodeValue.replaceAll('Cloudflare', 'Seedream 4.0');
+        if (added.nodeType === Node.TEXT_NODE) {
+          const next = replacement(added.nodeValue);
+          if (next !== added.nodeValue) added.nodeValue = next;
         } else if (added.nodeType === Node.ELEMENT_NODE) {
           replaceCloudflareText(added);
         }
