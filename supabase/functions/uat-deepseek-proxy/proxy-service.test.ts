@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { proxyDeepSeekRequirement } from "./proxy-service.ts";
+import { normalizeRequirementContent, proxyDeepSeekRequirement } from "./proxy-service.ts";
 
 test("validates the UAT JWT before calling DeepSeek", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -15,6 +15,25 @@ test("validates the UAT JWT before calling DeepSeek", async () => {
   assert.equal(calls[1].url, "https://api.deepseek.com/chat/completions");
   assert.equal(new Headers(calls[1].init?.headers).get("authorization"), "Bearer deepseek-key");
   assert.equal(result.content, "{\"goal\":\"真实理解\"}");
+});
+
+test("normalizes object-shaped required_assets into the UAT string-array contract", () => {
+  const normalized = JSON.parse(normalizeRequirementContent(JSON.stringify({
+    goal: "x",
+    required_assets: [
+      { asset_role: "TIG IP 虎", file_name: "IP.png", status: "已提供", note: "保持形象特征一致" },
+      { role: "公司彩色logo", filename: "WeBank.png", provided: true, usage: "浅色底使用" },
+    ],
+  })));
+  assert.deepEqual(normalized.required_assets, [
+    "已提供：TIG IP 虎 / IP.png（保持形象特征一致）",
+    "已提供：公司彩色logo / WeBank.png（浅色底使用）",
+  ]);
+});
+
+test("preserves already-valid string required_assets", () => {
+  const normalized = JSON.parse(normalizeRequirementContent(JSON.stringify({ required_assets: ["已提供：TIG IP / IP.png"] })));
+  assert.deepEqual(normalized.required_assets, ["已提供：TIG IP / IP.png"]);
 });
 
 test("rejects callers outside the UAT AI whitelist", async () => {
