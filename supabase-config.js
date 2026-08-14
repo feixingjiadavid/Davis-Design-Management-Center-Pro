@@ -9,7 +9,7 @@ const supabaseAnonKey = 'sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV';
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 if (typeof window !== 'undefined') {
-  import('./js/visual-reference-ui.js')
+  import('./js/visual-reference-ui.js?v=uat-qwen-vision-20260814')
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('视觉参考模块加载失败:', error));
 }
