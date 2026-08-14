@@ -170,13 +170,13 @@
 
     <script type="module">
         import { supabase } from './supabase-config.js';
-        import * as aiRequirementClient from './js/ai-requirement-client.js';
+        import * as aiRequirementClient from './js/ai-requirement-client.js?v=uat-workflow-20260814b';
         window.supabase = supabase;
         window.aiRequirementClient = aiRequirementClient;
         window.DB_TABLE = 'test_tasks';
         if(window.initApp) window.initApp();
     </script>
     <script src="./js/common.js"></script>
-    <script src="./js/task-detail-requester.js"></script>
+    <script src="./js/task-detail-requester.js?v=uat-workflow-20260814b"></script>
 </body>
 </html>
