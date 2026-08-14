@@ -39,6 +39,14 @@ test("requires clarification when critical information is missing", () => {
   assert.equal(decideAnalysisStatus(brief), "clarification_required");
 });
 
+test("does not block when a historical conflict has already been resolved by precedence", () => {
+  const brief = structuredClone(validBrief);
+  brief.conflicts = ["历史回答要求展示联系人，但当前显式设计作用域优先，因此本次不展示。"];
+  brief.missing_information = [];
+  brief.clarification_questions = [];
+  assert.equal(decideAnalysisStatus(brief), "understanding_ready");
+});
+
 test("marks a complete grounded brief ready for confirmation", () => {
   assert.equal(decideAnalysisStatus(validBrief), "understanding_ready");
 });
