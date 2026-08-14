@@ -4,7 +4,7 @@ import { buildRequirementPrompt, extractExplicitDesignScope } from "./requiremen
 
 test("instructs DeepSeek with every required JSON field and an output example", () => {
   const prompt = buildRequirementPrompt({ id: "TK-1" }, [], []);
-  for (const key of ["goal", "success_criteria", "deliverables", "facts", "confidence", "clarification_questions", "template_recommendations"]) {
+  for (const key of ["goal", "success_criteria", "deliverables", "pages", "facts", "confidence", "clarification_questions", "template_recommendations"]) {
     assert.match(prompt, new RegExp(`"${key}"`));
   }
   assert.match(prompt, /严格输出以下 JSON 对象结构/);
@@ -27,7 +27,7 @@ test("extracts explicit multi-page design scope instead of mixing article/commen
   assert.doesNotMatch(scope.text, /联系人/);
 });
 
-test("marks explicit design scope as authoritative in the requirement prompt", () => {
+test("marks explicit design scope as authoritative and requires one structured page per source page", () => {
   const prompt = buildRequirementPrompt(
     { id: "TK-1", channels: ["小蓝书"] },
     [{
@@ -44,4 +44,6 @@ test("marks explicit design scope as authoritative in the requirement prompt", (
   );
   assert.match(prompt, /DESIGN_SCOPE_PRIORITY=EXPLICIT/);
   assert.match(prompt, /不得把作用域之外的正文、评论区、联系人、链接、魔法指令自动塞进设计页/);
+  assert.match(prompt, /pages 必须与 DESIGN_SCOPE 中的页数一一对应/);
+  assert.match(prompt, /每页 copy 只能来自该页对应内容/);
 });
