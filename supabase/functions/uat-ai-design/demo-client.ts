@@ -7,20 +7,26 @@ export async function generateCloudflareDemo(
   const apiToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
   const model = Deno.env.get("CLOUDFLARE_DEMO_MODEL") || "";
   if (!accountId || !apiToken || !model) throw new Error("CLOUDFLARE_DEMO_NOT_CONFIGURED");
+  if (!Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width < 256 || size.width > 1920 || size.height < 256 || size.height > 1920) {
+    throw new Error("CLOUDFLARE_DEMO_SIZE_UNSUPPORTED");
+  }
+
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("width", String(size.width));
+  form.append("height", String(size.height));
 
   const response = await fetcher(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`, {
     method: "POST",
-    headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      prompt,
-      width: size.width,
-      height: size.height,
-      num_steps: 4,
-    }),
+    headers: { authorization: `Bearer ${apiToken}` },
+    body: form,
     signal: AbortSignal.timeout(90_000),
   });
 
-  if (!response.ok) throw new Error(`CLOUDFLARE_DEMO_HTTP_${response.status}`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`CLOUDFLARE_DEMO_HTTP_${response.status}${errorText ? `:${errorText.slice(0, 240)}` : ""}`);
+  }
   const contentType = response.headers.get("content-type") || "";
   if (contentType.startsWith("image/")) {
     const bytes = new Uint8Array(await response.arrayBuffer());
