@@ -18,7 +18,6 @@ export function resolveDemoSize(brief: Record<string, unknown>) {
   const dimensions = Array.isArray(brief.dimensions) ? brief.dimensions.join(" ") : "";
   const explicit = dimensions.match(/(\d{3,5})\s*(?:px)?\s*[x×]\s*(\d{3,5})\s*(?:px)?/i);
   if (explicit) return { width: Number(explicit[1]), height: Number(explicit[2]) };
-
   const channels = Array.isArray(brief.channels) ? brief.channels.map(String) : [];
   if (channels.some((channel) => channel.includes("小蓝书"))) return { width: 1242, height: 1660 };
   throw new Error("DEMO_SIZE_REQUIRED");
@@ -34,13 +33,11 @@ export function selectGenerationPages(brief: Record<string, unknown>): DemoPage[
     title: String(page?.title || `第${offset + 1}页`),
     copy: Array.isArray(page?.copy) ? page.copy.map(String).filter(Boolean) : [],
   })).sort((a, b) => a.index - b.index);
-
   if (!pages.length) {
     const fallbackCopy = Array.isArray(brief.copy) ? brief.copy.map(String).filter(Boolean) : [];
     if (!fallbackCopy.length) throw new Error("DEMO_PAGE_CONTENT_REQUIRED");
     return [{ index: 1, title: String(brief.goal || "设计页"), copy: fallbackCopy }];
   }
-
   const expected = Array.isArray(brief.deliverables)
     ? brief.deliverables.reduce((max: number, item: any) => Math.max(max, Number(item?.quantity || 0)), 0)
     : 0;
@@ -57,6 +54,25 @@ export function selectModelReferences<T extends { is_primary?: boolean; sort_ord
     .slice(0, 4);
 }
 
+function compactVisualAnalysis(brief: Record<string, unknown>) {
+  const value = brief.visual_reference_analysis;
+  if (!value || typeof value !== "object") return "无千问视觉分析";
+  const a = value as Record<string, any>;
+  return [
+    `整体风格：${String(a.style_summary || "")}`,
+    `风格关键词：${Array.isArray(a.style_keywords) ? a.style_keywords.join("、") : ""}`,
+    `构图规律：${Array.isArray(a.composition_patterns) ? a.composition_patterns.join("；") : ""}`,
+    `字体气质：${Array.isArray(a.typography_style) ? a.typography_style.join("；") : ""}`,
+    `色彩：${Array.isArray(a.color_palette) ? a.color_palette.join("、") : ""}`,
+    `图片处理：${Array.isArray(a.image_treatment) ? a.image_treatment.join("；") : ""}`,
+    `材质纹理：${Array.isArray(a.texture_materials) ? a.texture_materials.join("；") : ""}`,
+    `图形元素：${Array.isArray(a.graphic_elements) ? a.graphic_elements.join("；") : ""}`,
+    `层级：${Array.isArray(a.hierarchy_rules) ? a.hierarchy_rules.join("；") : ""}`,
+    `主参考重点：${String(a.primary_reference_focus || "")}`,
+    `禁止照搬：${Array.isArray(a.avoid_copying) ? a.avoid_copying.join("；") : ""}`,
+  ].filter((line) => !line.endsWith("：")).join("\n");
+}
+
 export function demoPagePrompt(brief: Record<string, unknown>, page: DemoPage, references: VisualReference[]) {
   const visualDirection = Array.isArray(brief.visual_direction) ? brief.visual_direction : [];
   const layoutPlan = Array.isArray(brief.layout_plan) ? brief.layout_plan : [];
@@ -64,26 +80,29 @@ export function demoPagePrompt(brief: Record<string, unknown>, page: DemoPage, r
   const recommendations = Array.isArray(brief.recommendations) ? brief.recommendations.map((item: any) => item?.value).filter(Boolean) : [];
   const referenceNotes = references.map((reference, index) => `${index === 0 ? "主参考" : `参考${index + 1}`}：${reference.file_name}${reference.note ? `（${reference.note}）` : ""}`);
 
-  return `你是专业企业视觉设计师。生成第 ${page.index} 页的低成本视觉 Demo，用于确认构图、视觉语言、信息层级和风格方向，不是文档截图，也不是纯文字白底排版。
+  return `你是专业企业视觉设计师。生成第 ${page.index} 页低成本视觉 Demo，用于确认构图、视觉语言、信息层级和风格方向。绝不是文档截图，也不是纯文字白底排版。
 
 【本页】${page.title}
-【本页必须传达的信息】
+【本页唯一内容来源】
 ${page.copy.map((line) => `- ${line}`).join("\n")}
 
-【整体目标】${String(brief.goal || "")}
-【视觉方向】${visualDirection.join("；") || "以参考图为主"}
-【版式规划】${layoutPlan.join("；") || "由专业设计判断"}
+【千问视觉对参考图的真实分析】
+${compactVisualAnalysis(brief)}
+
+【DeepSeek整理后的视觉方向】${visualDirection.join("；") || "以参考图为主"}
+【本页版式规划】${layoutPlan.join("；") || "由专业设计判断"}
 【硬性限制】${constraints.join("；") || "无"}
 【AI设计建议】${recommendations.join("；") || "无"}
-【视觉参考】
+【传给模型的视觉参考】
 ${referenceNotes.join("\n")}
 
 要求：
-1. 强参考 input image 0 的整体设计语言；其他 input images 用于补充配色、构图、材质或IP语言。
-2. 必须像真正的小蓝书宣传视觉：有明确主视觉、图形/插画/空间关系、层级和留白；禁止生成Word/PPT式纯码字页面。
-3. 不要把本页所有文字堆成文章。用标题、核心数字、短句和视觉模块建立信息层级；长文案只作为排版语义依据。
-4. 不得添加其他页面、评论区、联系人、链接或背景资料中的内容。
-5. 画面为单页完整竖版构图，四周保留安全边距，所有核心元素不得裁切。`;
+1. input image 0 为主参考，强继承它的视觉语言；其他 input images 用于提炼共同风格。千问视觉分析是对这些图片的真实观察，必须落实到构图、色彩、字体气质、拼贴/材质/图形处理上。
+2. 只继承“设计语言”，严禁照搬参考图里的具体人物、猫、摩托车、地点、Logo、标题文案或品牌内容。
+3. 必须像真正的小蓝书宣传视觉：有主视觉、有图形/插画/拼贴/空间层次、有明确视觉中心；禁止生成Word/PPT式纯码字页面。
+4. 文字只做信息层级：突出主标题、关键数字、短句；不要把全部文案排成文章。长文案只作为语义依据。
+5. 不得添加其他页面、正文区、评论区、联系人、链接、魔法指令等不属于本页 copy 的内容。
+6. 单页完整竖版构图，四周保留安全边距，核心元素不得裁切。`;
 }
 
 function finalPrompt(brief: Record<string, unknown>, demoOutput: Record<string, unknown>) {
@@ -119,7 +138,6 @@ async function loadVisualReferences(admin: any, taskId: string) {
 async function generateDemoPage(admin: any, taskId: string, analysis: any, page: DemoPage, pageCount: number, references: VisualReference[]) {
   const existing = await findActiveDemo(admin, taskId, analysis.id, page.index);
   if (existing) return existing;
-
   const idempotencyKey = crypto.randomUUID();
   const model = Deno.env.get("CLOUDFLARE_DEMO_MODEL") || "unconfigured";
   const queued = await admin.from("uat_design_generations").insert({
@@ -127,14 +145,13 @@ async function generateDemoPage(admin: any, taskId: string, analysis: any, page:
     analysis_id: analysis.id,
     kind: "demo",
     model,
-    prompt_version: "demo-reference-page-v1",
+    prompt_version: "demo-reference-page-v2-qwen",
     idempotency_key: idempotencyKey,
     page_index: page.index,
     page_count: pageCount,
     status: "generating",
   }).select("*").single();
   if (queued.error) throw queued.error;
-
   try {
     const size = resolveDemoSize(analysis.brief);
     const modelReferences = selectModelReferences(references);
@@ -160,11 +177,11 @@ export async function generateDemoSet(admin: any, taskId: string, analysisId: st
   const task = (await admin.from("test_tasks").select("request_type").eq("id", taskId).single()).data;
   const references = await loadVisualReferences(admin, taskId);
   if ((task?.request_type === "平面视觉" || !task?.request_type) && references.length === 0) throw new Error("VISUAL_REFERENCE_REQUIRED");
+  if (references.length > 0 && !analysis.brief?.visual_reference_analysis) throw new Error("QWEN_VISUAL_ANALYSIS_REQUIRED");
   const pages = selectGenerationPages(analysis.brief);
   return await Promise.all(pages.map((page) => generateDemoPage(admin, taskId, analysis, page, pages.length, references)));
 }
 
-// Legacy single-demo action remains compatible, but normal automatic flow uses generateDemoSet.
 export async function generateDemo(admin: any, taskId: string, analysisId: string, idempotencyKey: string) {
   const existing = idempotencyKey ? await findIdempotent(admin, idempotencyKey) : null;
   if (existing) return existing;
