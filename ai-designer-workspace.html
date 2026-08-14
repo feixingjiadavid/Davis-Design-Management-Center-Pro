@@ -78,8 +78,9 @@
     function selected(){return tasks.find(t=>t.id===selectedId)}
     function statusIndex(status,hasPreview){
       if(['completed','archived','reviewing'].includes(status))return 4;
-      if(status==='pending_approval')return 3;
-      if(hasPreview||status==='processing')return 2;
+      if(['final_review','ready_for_final','pending_approval'].includes(status))return 3;
+      if(hasPreview||['generating_demo','demo_review'].includes(status))return 2;
+      if(['processing','needs_input','understanding_ready','ready_for_demo'].includes(status))return 1;
       if(['pending_accept','pending'].includes(status))return 0;
       return 0;
     }
@@ -129,7 +130,7 @@
       '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">AI 如何理解需求</h3>'+briefHtml(analysis)+'</div>'+
       '<div class="rounded-xl bg-slate-900/70 border border-white/5 p-5"><h3 class="text-sm font-bold text-white mb-3">需要补充的问题</h3>'+(openQuestions.length?listHtml(openQuestions.map(q=>q.question)):'<p class="text-sm text-emerald-400">当前没有未回答问题。</p>')+'</div>'+
       (stateError?'<p class="text-xs text-rose-300">状态读取失败：'+esc(stateError)+'</p>':'')+
-      '<div class="flex flex-wrap gap-3"><button id="readBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white">重新读取资料</button>'+analysisRetryButton+(analysis?.status==='confirmed'?'<button id="demoBtn" class="btn bg-violet-600 hover:bg-violet-500 text-white">生成 Cloudflare Demo</button>':'')+(demo?.status==='confirmed'?'<button id="finalBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950">生成 Seedream 4.0 成品</button>':'')+'<button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div><p class="text-xs text-slate-500">AI 会在需求提交后自动读取并理解；仅在失败时提供重试。Demo 和成品仍需人工确认。</p></div>'+
+      '<div class="flex flex-wrap gap-3"><button id="readBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white">重新读取资料</button>'+analysisRetryButton+(analysis?.status==='confirmed'&&!demo?'<button id="demoBtn" class="btn bg-violet-600 hover:bg-violet-500 text-white">生成 Cloudflare Demo</button>':'')+(demo?.status==='confirmed'?'<button id="finalBtn" class="btn bg-amber-500 hover:bg-amber-400 text-slate-950">生成 Seedream 4.0 成品</button>':'')+'<button id="retryBtn" class="btn bg-slate-800 hover:bg-slate-700 text-slate-200">刷新状态</button></div><p class="text-xs text-slate-500">AI 会自动读取、理解并生成第一版 Demo；只有成品生成与最终验收需要人工确认。</p></div>'+
       '<div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Demo 版本</h3>'+(demo?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(demo.output.image_url)+'" alt="AI Demo">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(demo?.error_message||'理解确认后生成低成本 Demo')+'</div>')+'</div><div class="rounded-xl bg-slate-950 border border-white/10 p-4 min-h-[250px]"><h3 class="text-sm font-bold text-white mb-3">Seedream 4.0 成品</h3>'+(final?.output?.image_url?'<img class="w-full rounded-lg border border-white/10 bg-white" src="'+esc(final.output.image_url)+'" alt="Seedream 成品">':'<div class="h-[190px] flex items-center justify-center text-center text-slate-600">'+esc(final?.error_message||'Demo 确认后才可生成成品')+'</div>')+'</div></div></div>';
       $('readBtn').onclick=()=>invoke('read_sources');if($('analyzeBtn'))$('analyzeBtn').onclick=()=>invoke('reanalyze');$('retryBtn').onclick=loadTasks;
       if($('demoBtn'))$('demoBtn').onclick=()=>invoke('generate_demo',{analysis_id:analysis.id,idempotency_key:newIdempotencyKey()});
