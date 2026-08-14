@@ -42,6 +42,11 @@ export const supabase = sdk.createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
   window.__davisSupabaseSdkSource = sdk.source;
+
+  // index.js 可能因为上方异步 SDK 加载耗时而错过 DOMContentLoaded；恢复器只在需求大厅且仍处于“加载中”时兜底启动。
+  import('./js/index-lifecycle-recovery.js?v=uat-index-lifecycle-v1')
+    .catch(error => console.error('需求大厅生命周期恢复模块加载失败:', error));
+
   import('./js/required-design-assets-ui.js?v=uat-assets-v1')
     .then(module => module.bootstrapRequiredDesignAssetsUI(supabase))
     .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-v2'))
