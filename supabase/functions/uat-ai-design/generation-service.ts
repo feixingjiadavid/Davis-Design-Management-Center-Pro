@@ -40,12 +40,28 @@ async function findIdempotent(admin: any, key: string) {
   return (await admin.from("uat_design_generations").select("*").eq("idempotency_key", key).maybeSingle()).data;
 }
 
+async function findActiveDemo(admin: any, taskId: string, analysisId: string) {
+  return (await admin.from("uat_design_generations")
+    .select("*")
+    .eq("task_id", taskId)
+    .eq("analysis_id", analysisId)
+    .eq("kind", "demo")
+    .in("status", ["generating", "ready", "confirmed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()).data;
+}
+
 export async function generateDemo(admin: any, taskId: string, analysisId: string, idempotencyKey: string) {
   const existing = await findIdempotent(admin, idempotencyKey);
   if (existing) return existing;
   const analysis = (await admin.from("uat_requirement_analyses").select("*").eq("id", analysisId).eq("task_id", taskId).single()).data;
   if (!analysis) throw new Error("ANALYSIS_NOT_FOUND");
   assertCanGenerateDemo(analysis.status);
+
+  const activeDemo = await findActiveDemo(admin, taskId, analysisId);
+  if (activeDemo) return activeDemo;
+
   const model = Deno.env.get("CLOUDFLARE_DEMO_MODEL") || "unconfigured";
   const queued = await admin.from("uat_design_generations").insert({
     task_id: taskId,
@@ -57,7 +73,7 @@ export async function generateDemo(admin: any, taskId: string, analysisId: strin
     status: "generating",
   }).select("*").single();
   if (queued.error) {
-    const raced = await findIdempotent(admin, idempotencyKey);
+    const raced = await findIdempotent(admin, idempotencyKey) || await findActiveDemo(admin, taskId, analysisId);
     if (raced) return raced;
     throw queued.error;
   }
