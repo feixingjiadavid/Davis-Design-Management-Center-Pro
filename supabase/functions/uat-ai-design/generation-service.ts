@@ -14,15 +14,17 @@ export async function executeIdempotent<T>(existing: T | null, provider: () => P
   return existing ?? await provider();
 }
 
-function resolveDemoSize(brief: Record<string, unknown>) {
+export function resolveDemoSize(brief: Record<string, unknown>) {
   const dimensions = Array.isArray(brief.dimensions) ? brief.dimensions.join(" ") : "";
-  const channels = Array.isArray(brief.channels) ? brief.channels.join(" ") : "";
-  if (channels.includes("小蓝书") || dimensions.includes("1242x1660") || dimensions.includes("1242×1660")) {
+  const explicit = dimensions.match(/(\d{3,5})\s*(?:px)?\s*[x×]\s*(\d{3,5})\s*(?:px)?/i);
+  if (explicit) return { width: Number(explicit[1]), height: Number(explicit[2]) };
+
+  const channels = Array.isArray(brief.channels) ? brief.channels.map(String) : [];
+  if (channels.some((channel) => channel.includes("小蓝书"))) {
     return { width: 1242, height: 1660 };
   }
-  const match = dimensions.match(/(\d{3,5})[x×](\d{3,5})/);
-  if (match) return { width: Number(match[1]), height: Number(match[2]) };
-  return { width: 1242, height: 1660 };
+
+  throw new Error("DEMO_SIZE_REQUIRED");
 }
 
 export function demoPrompt(brief: Record<string, unknown>) {
