@@ -9,9 +9,12 @@ const supabaseAnonKey = 'sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV';
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 if (typeof window !== 'undefined') {
-  import('./js/visual-reference-ui.js?v=uat-qwen-vision-20260814')
+  import('./js/visual-reference-ui.js?v=uat-qwen-vision-20260814b')
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('视觉参考模块加载失败:', error));
+  import('./js/ai-auto-recovery.js?v=uat-qwen-vision-20260814b')
+    .then(module => module.bootstrapAiAutoRecovery(supabase))
+    .catch(error => console.error('AI 自动恢复模块加载失败:', error));
 }
 
 console.log("🧪 UAT 环境：Davis 设计管理中心连接成功！");
