@@ -1,6 +1,6 @@
 import type { NormalizedSourceDocument } from "./source-types.ts";
 
-export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v8-style-vs-assets";
+export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v9-required-assets-normalized";
 
 export function extractExplicitDesignScope(text: string): { marker: string; text: string } | null {
   const normalized = String(text || "").replace(/\r/g, "");
@@ -99,7 +99,8 @@ ${designAssetsText}
 9. deliverables.quantity 必须与 pages.length 一致；如果 DESIGN_SCOPE 有3页，则必须输出3个 pages，不能只给一个总览。
 10. 视觉建议必须与千问视觉分析一致；没有视觉分析时不得虚构参考图风格。
 11. 当 missing_information=[] 且 clarification_questions=[] 时，必须视为信息已足够，不得因为已解决的历史矛盾继续要求需求方补充。
-12. required_assets 必须区分“来源明确要求但尚未上传的素材”和“已上传 design_assets”。已上传素材用“已提供：角色/文件名”描述；未上传且明确必需的素材才进入 missing_information。
+12. required_assets 必须区分“来源明确要求但尚未上传的素材”和“已上传 design_assets”。已上传素材用“已提供：角色 / 文件名（用途说明）”这种单行字符串描述；未上传且明确必需的素材用“待补充：素材名称”描述，并进入 missing_information。
+13. required_assets 的每一项必须是字符串，禁止输出对象、键值结构或嵌套 JSON。例如：["已提供：TIG IP 虎 / IP.png（保持形象特征一致）", "已提供：公司彩色Logo / WeBank logo 彩色英文Logo.png（浅色底使用）"]。
 
 严格输出以下 JSON 对象结构，必须保留全部字段；没有内容的列表填写 []，未知截止日期填写空字符串：
 ${JSON.stringify({
@@ -113,7 +114,7 @@ ${JSON.stringify({
   copy: ["跨页共同必须保留的文案；如无则[]"],
   visual_direction: ["由千问视觉分析转化出的可执行视觉方向"],
   layout_plan: ["逐页版式/信息层级规划"],
-  required_assets: ["已提供或尚需上传的必用素材"],
+  required_assets: ["已提供：素材角色 / 文件名（用途说明）"],
   constraints: ["限制条件"],
   deadline: "YYYY-MM-DD 或空字符串",
   facts: [{ key: "事实字段", value: "事实值", source_type: "form_fields 或 tencent_doc", source_id: "来源 ID", locator: "需求单字段名或文档定位" }],
