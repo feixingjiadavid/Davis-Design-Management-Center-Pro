@@ -74,7 +74,7 @@ async function renderAiRequirementPanel() {
     if (!panel || !content || globalTaskData?.assignee !== 'davis.design.ai' || !window.aiRequirementClient) return;
     panel.classList.remove('hidden');
     try {
-        const state = await window.aiRequirementClient.loadAiRequirementState(window.supabase, currentTaskId);
+        const state = await window.aiRequirementClient.loadAiRequirementState(window.supabase, currentTaskId, globalTaskData.link);
         window.currentAiRequirementState = state;
         const analysis = state.analysis;
         const brief = analysis?.brief || {};
@@ -83,17 +83,52 @@ async function renderAiRequirementPanel() {
         const final = [...state.generations].reverse().find((item) => item.kind === 'final');
         const sourceHtml = state.sources.length ? state.sources.map((source) => `<div class="bg-black/20 border border-white/5 rounded-xl p-3"><div class="flex justify-between gap-3"><span class="font-bold text-zinc-200">${source.source_type === 'form_fields' ? '需求单字段' : '腾讯文档'}</span><span class="${source.status === 'ready' ? 'text-emerald-400' : 'text-amber-400'}">${escapeAiHtml(window.aiRequirementClient.SOURCE_STATUS_COPY[source.status] || source.status)}</span></div>${source.error_message ? `<p class="text-rose-400 mt-2">${escapeAiHtml(source.error_message)}</p>` : ''}</div>`).join('') : '<p class="text-zinc-500">AI 尚未读取资料。</p>';
         const factHtml = (brief.facts || []).map((fact) => `<li>${escapeAiHtml(fact.key)}：${escapeAiHtml(fact.value)} <span class="text-indigo-400">[${escapeAiHtml(fact.locator)}]</span></li>`).join('');
-        const questionsHtml = openQuestions.map((question) => `<div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3"><p class="text-amber-200">${escapeAiHtml(question.question)}</p><button onclick="window.answerAiClarification('${question.id}')" class="mt-2 px-3 py-1.5 rounded-lg bg-amber-500 text-black font-bold">回答问题</button></div>`).join('');
+        const messagesHtml = (state.messages || []).map((message) => window.aiClarificationChat.renderMessageBubble(message, escapeAiHtml)).join('');
+        const questionsHtml = openQuestions.map((question, index) => `<label class="block bg-amber-500/5 border border-amber-500/20 rounded-xl p-3"><span class="text-amber-200 text-sm">${index + 1}. ${escapeAiHtml(question.question)}</span><textarea data-ai-question="${question.id}" class="mt-3 w-full min-h-[76px] rounded-xl bg-black/30 border border-white/10 p-3 text-sm text-white outline-none focus:border-amber-400" placeholder="请输入明确答案；不确定可填写“交给AI决定”"></textarea></label>`).join('');
         let controls = '<button onclick="window.refreshAiUnderstanding()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold">让 AI 重新读取并理解</button>';
         if (analysis?.status === 'understanding_ready') controls += `<button onclick="window.confirmAiUnderstanding('${analysis.id}')" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">确认需求理解并生成 Demo</button>`;
         if (demo?.status === 'ready') controls += `<button onclick="window.confirmAiDemo('${demo.id}')" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">确认 Demo，生成 Seedream 4.0 成品</button>`;
-        content.innerHTML = `<h3 class="text-base font-bold text-white mb-5">AI 如何理解需求</h3><div class="grid md:grid-cols-2 gap-5"><div><p class="text-xs font-bold text-zinc-300 mb-2">资料读取</p><div class="space-y-2">${sourceHtml}</div></div><div><p class="text-xs font-bold text-zinc-300 mb-2">理解结果</p>${analysis ? `<p class="text-white font-bold">${escapeAiHtml(brief.goal || '未识别目标')}</p><p class="mt-2">尺寸：${escapeAiHtml((brief.dimensions || []).join('、') || '待补充')}</p><p>渠道：${escapeAiHtml((brief.channels || []).join('、') || '待补充')}</p><p>置信度：${Math.round((brief.confidence || 0) * 100)}%</p><ul class="mt-2 space-y-1 text-xs">${factHtml}</ul>` : '<p class="text-zinc-500">尚未生成结构化理解单。</p>'}</div></div><div class="mt-5"><p class="text-xs font-bold text-zinc-300 mb-2">需要补充的问题</p><div class="space-y-2">${questionsHtml || '<p class="text-emerald-400">当前没有未回答问题。</p>'}</div></div><div class="mt-5 flex flex-wrap gap-3">${controls}</div>${demo?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Demo 版本</p><img src="${escapeAiHtml(demo.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}${final?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Seedream 4.0 成品</p><img src="${escapeAiHtml(final.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}`;
+        content.innerHTML = `<h3 class="text-base font-bold text-white mb-5">AI 如何理解需求</h3><div class="grid md:grid-cols-2 gap-5"><div><p class="text-xs font-bold text-zinc-300 mb-2">资料读取</p><div class="space-y-2">${sourceHtml}</div></div><div><p class="text-xs font-bold text-zinc-300 mb-2">理解结果</p>${analysis ? `<p class="text-white font-bold">${escapeAiHtml(brief.goal || '未识别目标')}</p><p class="mt-2">尺寸：${escapeAiHtml((brief.dimensions || []).join('、') || '待补充')}</p><p>渠道：${escapeAiHtml((brief.channels || []).join('、') || '待补充')}</p><p>置信度：${Math.round((brief.confidence || 0) * 100)}%</p><ul class="mt-2 space-y-1 text-xs">${factHtml}</ul>` : '<p class="text-zinc-500">尚未生成结构化理解单。</p>'}</div></div><section id="ai-clarification-chat" class="mt-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5"><div class="flex justify-between gap-3 mb-4"><div><h3 class="text-base font-bold text-white">AI 需求沟通台</h3><p class="text-xs text-zinc-400 mt-1">直接补充信息，AI 收到后会自动重新理解。</p></div><span class="text-xs text-indigo-300">${globalTaskData.status === 'processing' ? 'AI 正在理解…' : openQuestions.length ? `等待你回答 ${openQuestions.length} 个问题` : '当前无需补充'}</span></div><div class="max-h-72 overflow-y-auto space-y-3 mb-4">${messagesHtml || '<p class="text-xs text-zinc-500">尚无沟通记录。</p>'}</div><div class="space-y-3">${questionsHtml}</div><textarea id="ai-general-message" class="mt-3 w-full min-h-[80px] rounded-xl bg-black/30 border border-white/10 p-3 text-sm text-white outline-none focus:border-indigo-400" placeholder="还可以补充其他背景、腾讯文档链接或说明（选填）"></textarea>${openQuestions.length ? '<div class="mt-3 flex flex-wrap gap-3"><button id="ai-chat-submit" onclick="window.submitAiChatAnswers()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold">提交给 AI</button><button onclick="window.delegateAiClarifications()" class="px-5 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-white font-bold">软性问题交给 AI 决定</button></div>' : ''}<p id="ai-chat-status" class="mt-3 text-xs text-zinc-500"></p></section><div class="mt-5 flex flex-wrap gap-3">${controls}</div>${demo?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Demo 版本</p><img src="${escapeAiHtml(demo.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}${final?.output?.image_url ? `<div class="mt-5"><p class="font-bold text-white mb-2">Seedream 4.0 成品</p><img src="${escapeAiHtml(final.output.image_url)}" class="max-h-[520px] rounded-xl border border-white/10"></div>` : ''}`;
+        if (globalTaskData.status === 'processing') window.scheduleAiChatRefresh();
     } catch (error) {
         content.innerHTML = `<p class="text-rose-400">AI 状态读取失败：${escapeAiHtml(error.message)}</p><button onclick="window.renderAiRequirementPanel()" class="mt-3 px-4 py-2 rounded-lg bg-zinc-800 text-white">重试</button>`;
     }
 }
 
 window.renderAiRequirementPanel = renderAiRequirementPanel;
+
+let aiChatRefreshTimer = null;
+window.scheduleAiChatRefresh = function() {
+    clearTimeout(aiChatRefreshTimer);
+    aiChatRefreshTimer = setTimeout(async () => { await fetchTaskData(); }, 2000);
+};
+
+window.submitAiChatAnswers = async function() {
+    const fields = [...document.querySelectorAll('[data-ai-question]')];
+    const answers = fields.filter((field) => field.value.trim()).map((field) => ({ clarification_id: field.dataset.aiQuestion, answer: field.value.trim() }));
+    const message = document.getElementById('ai-general-message')?.value.trim() || '';
+    if (answers.length === 0) return window.showToast('还没有填写', '请至少回答一个问题。', 'info');
+    const button = document.getElementById('ai-chat-submit');
+    if (button) { button.disabled = true; button.innerText = 'AI 已收到，正在理解…'; }
+    const status = document.getElementById('ai-chat-status');
+    if (status) status.innerText = '消息已发送，AI 正在后台重新理解；你可以留在当前页面。';
+    try {
+        await window.aiRequirementClient.submitClarificationAnswers(window.supabase, currentTaskId, answers, message);
+        window.showToast('AI 已收到', '正在根据补充信息重新理解需求。', 'success');
+        window.scheduleAiChatRefresh();
+    } catch (error) {
+        if (button) { button.disabled = false; button.innerText = '提交给 AI'; }
+        window.showToast('提交失败', `${error.message}，已填写内容仍保留。`, 'error');
+    }
+};
+
+window.delegateAiClarifications = async function() {
+    try {
+        await window.aiRequirementClient.delegateClarificationsToAi(window.supabase, currentTaskId);
+        window.showToast('已交给 AI', 'AI 将按历史模板和专业判断处理软性问题。', 'success');
+        window.scheduleAiChatRefresh();
+    } catch (error) { window.showToast('暂时不能交给 AI', error.message, 'info'); }
+};
 
 window.refreshAiUnderstanding = async function() {
     try {
