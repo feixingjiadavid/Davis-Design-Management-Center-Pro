@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRequirementPrompt } from "./requirement-prompt.ts";
+import { buildRequirementPrompt, extractExplicitDesignScope } from "./requirement-prompt.ts";
 
 test("instructs DeepSeek with every required JSON field and an output example", () => {
   const prompt = buildRequirementPrompt({ id: "TK-1" }, [], []);
@@ -15,4 +15,33 @@ test("treats 小蓝书 as a fixed 1242x1660 business preset", () => {
   assert.match(prompt, /小蓝书/);
   assert.match(prompt, /1242x1660px/);
   assert.match(prompt, /不得追问尺寸/);
+});
+
+test("extracts explicit multi-page design scope instead of mixing article/comment content", () => {
+  const source = `【正文】\n魔法指令\n联系人\n【评论区置顶】\n更多说明\n—————————————分割线，以下是小蓝书配图，已制作完成———————————\n【图片】\n第 1 页 · 封面\n封面文案\n第 2 页 · 规则\n规则文案\n第 3 页 · 另外两条赛道\n赛道文案`;
+  const scope = extractExplicitDesignScope(source);
+  assert.ok(scope);
+  assert.match(scope.text, /第 1 页 · 封面/);
+  assert.match(scope.text, /第 3 页 · 另外两条赛道/);
+  assert.doesNotMatch(scope.text, /魔法指令/);
+  assert.doesNotMatch(scope.text, /联系人/);
+});
+
+test("marks explicit design scope as authoritative in the requirement prompt", () => {
+  const prompt = buildRequirementPrompt(
+    { id: "TK-1", channels: ["小蓝书"] },
+    [{
+      id: "source-1",
+      sourceType: "tencent_doc",
+      document: {
+        title: "doc",
+        plainText: `【正文】\n魔法指令\n————————分割线，以下是小蓝书配图，已制作完成————————\n【图片】\n第 1 页 · 封面\n封面文案\n第 2 页 · 规则\n规则文案\n第 3 页 · 其他赛道\n赛道文案`,
+        structuredBlocks: [], imageObservations: [], contentSha256: "x",
+        counts: { characterCount: 1, tableCount: 0, imageCount: 0, attachmentCount: 0 },
+      },
+    }],
+    [],
+  );
+  assert.match(prompt, /DESIGN_SCOPE_PRIORITY=EXPLICIT/);
+  assert.match(prompt, /不得把作用域之外的正文、评论区、联系人、链接、魔法指令自动塞进设计页/);
 });
