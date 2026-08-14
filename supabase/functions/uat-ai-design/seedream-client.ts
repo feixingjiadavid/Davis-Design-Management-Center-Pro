@@ -60,6 +60,7 @@ export async function generateSeedreamDemo(
     image_url: String(payload.image_url),
     provider: "seedream",
     model: String(payload.model || SEEDREAM_DEMO_MODEL),
+    size: { width: size.width, height: size.height },
     requested_size: String(payload.requested_size || `${size.width}x${size.height}`),
     actual_size: String(payload.actual_size || `${size.width}x${size.height}`),
     dimension_match: payload.dimension_match !== false,
