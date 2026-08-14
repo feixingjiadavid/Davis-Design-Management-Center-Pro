@@ -31,6 +31,7 @@ Deno.serve(async (request) => {
   if (!isAiDesigner && !isRequesterAutoTrigger) return out({ ok: false, error: "UAT AI account or requester auto-trigger required" }, 403);
   const { data: task } = await admin.from("test_tasks").select("*").eq("id", task_id).single();
   if (!task || task.assignee !== "davis.design.ai") return out({ ok: false, error: "Task is not assigned to UAT AI" }, 400);
+
   if (action === "read_sources") {
     try {
       const sources = await ingestTaskSources(admin, task, auth.user.id);
@@ -47,8 +48,62 @@ Deno.serve(async (request) => {
       return out({ ok: false, error: message }, 400);
     }
   }
+
   let history: Array<Record<string, unknown>> = [];
   try { history = JSON.parse(task.history_json || "[]"); } catch { /* Preserve empty history. */ }
+
+  const runDemoGeneration = async (analysisId: string, idempotencyKey: string, source: string) => {
+    await admin.from("test_tasks").update({
+      status: "generating_demo",
+      summary_desc: "AI 设计师已开始生成 Cloudflare Demo",
+    }).eq("id", task_id);
+    await admin.from("uat_audit_log").insert({
+      actor_id: auth.user.id,
+      actor_email: auth.user.email,
+      action: "demo_generation_started",
+      task_id,
+      details: { analysis_id: analysisId, source },
+    });
+
+    try {
+      const generation = await generateDemo(admin, task_id, analysisId, idempotencyKey);
+      await admin.from("test_tasks").update({
+        status: "demo_review",
+        summary_desc: "Cloudflare Demo 已生成，等待需求方确认",
+      }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({
+        actor_id: auth.user.id,
+        actor_email: auth.user.email,
+        action: "demo_generated",
+        task_id,
+        details: { generation_id: generation.id, model: generation.model, source },
+      });
+      await admin.from("uat_clarification_messages").insert({
+        task_id,
+        analysis_id: analysisId,
+        sender_role: "ai_designer",
+        message_type: "summary",
+        content: "第一版 Demo 已生成，请查看设计效果。",
+        metadata: { status: "demo_review", generation_id: generation.id },
+      });
+      return generation;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Demo generation failed";
+      await admin.from("test_tasks").update({
+        status: "demo_failed",
+        summary_desc: `Demo 生成失败：${message.slice(0, 160)}`,
+      }).eq("id", task_id);
+      await admin.from("uat_audit_log").insert({
+        actor_id: auth.user.id,
+        actor_email: auth.user.email,
+        action: "demo_generation_failed",
+        task_id,
+        details: { analysis_id: analysisId, error: message, source },
+      });
+      throw error;
+    }
+  };
+
   const executeAnalysis = async () => {
     try {
       if (shouldRefreshSourcesForAction(action)) await ingestTaskSources(admin, task, auth.user.id);
@@ -57,21 +112,40 @@ Deno.serve(async (request) => {
       history.push({ action: "ai_requirement_analysis", operator: "Davis AI设计师 (UAT)", analysis_id: analysis.id, version: analysis.version, status: analysis.status, time: new Date().toISOString() });
       await admin.from("test_tasks").update({
         status: nextStatus,
-        summary_desc: nextStatus === "needs_input" ? "AI 已自动理解需求，等待需求方补充信息" : "AI 已自动生成需求理解单，等待需求方确认",
+        summary_desc: nextStatus === "needs_input" ? "AI 已自动理解需求，等待需求方补充信息" : "AI 已完成需求理解，正在自动进入 Demo 生成",
         history_json: JSON.stringify(history),
       }).eq("id", task_id);
       await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "ai_requirement_analysis", task_id, details: { analysis_id: analysis.id, version: analysis.version, status: analysis.status, automatic: isAutomaticAnalysisAction(action) } });
+
       if (["answer_clarifications", "delegate_to_ai"].includes(action)) {
-        await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: nextStatus === "needs_input" ? "我已结合你的补充重新理解需求，仍有少量会影响出图的关键信息需要确认。" : "我已理解完成并形成可执行方案，请确认理解单后进入 Demo 出图。", metadata: { status: nextStatus, version: analysis.version } });
+        await admin.from("uat_clarification_messages").insert({
+          task_id,
+          analysis_id: analysis.id,
+          sender_role: "ai_designer",
+          message_type: "summary",
+          content: nextStatus === "needs_input"
+            ? "我已结合你的补充重新理解需求，仍有少量会影响出图的关键信息需要确认。"
+            : "我已理解完成，信息足够，现在自动进入 Demo 出图。",
+          metadata: { status: nextStatus, version: analysis.version },
+        });
       }
+
       if (analysis.status === "understanding_ready") {
         await confirmUnderstanding(admin, task_id, analysis.id, auth.user.id);
-        await admin.from("test_tasks").update({ status: "generating_demo", summary_desc: "AI 已理解需求，正在生成 Cloudflare Demo" }).eq("id", task_id);
-        await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: "信息已经够了，我现在开始生成第一版设计图。", metadata: { status: "generating_demo", version: analysis.version } });
-        const generation = await generateDemo(admin, task_id, analysis.id, crypto.randomUUID());
-        await admin.from("test_tasks").update({ status: "demo_review", summary_desc: "Cloudflare Demo 已生成，等待需求方查看" }).eq("id", task_id);
-        await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: "第一版 Demo 已生成，请查看设计效果。", metadata: { status: "demo_review", generation_id: generation.id } });
-        return { ok: true, status: "demo_review", analysis, generation };
+        await admin.from("uat_clarification_messages").insert({
+          task_id,
+          analysis_id: analysis.id,
+          sender_role: "ai_designer",
+          message_type: "summary",
+          content: "信息已经够了，我现在自动开始生成第一版设计图。",
+          metadata: { status: "generating_demo", version: analysis.version },
+        });
+        try {
+          const generation = await runDemoGeneration(analysis.id, `auto-demo:${analysis.id}`, "automatic_analysis");
+          return { ok: true, status: "demo_review", analysis, generation };
+        } catch (error) {
+          return { ok: false, status: "demo_failed", analysis, error: error instanceof Error ? error.message : "Demo generation failed" };
+        }
       }
       return { ok: true, status: analysis.status, analysis };
     } catch (error) {
@@ -81,6 +155,7 @@ Deno.serve(async (request) => {
       return { ok: false, error: message };
     }
   };
+
   if (action === "answer_clarifications" || action === "delegate_to_ai") {
     try {
       const clientRequestId = String(body.client_request_id || "");
@@ -96,11 +171,13 @@ Deno.serve(async (request) => {
       return out({ ok: false, error: error instanceof Error ? error.message : "Clarification chat failed" }, 400);
     }
   }
+
   if (isAutomaticAnalysisAction(action)) {
     await admin.from("test_tasks").update({ status: "processing", summary_desc: "AI 正在自动读取资料并理解需求" }).eq("id", task_id);
     EdgeRuntime.waitUntil(executeAnalysis());
     return out({ ok: true, status: "processing" }, 202);
   }
+
   if (action === "answer_clarification") {
     try {
       const clarification = await answerClarification(admin, task_id, String(body.clarification_id || ""), String(body.answer || ""), auth.user.id);
@@ -110,27 +187,28 @@ Deno.serve(async (request) => {
       return out({ ok: false, error: error instanceof Error ? error.message : "Clarification answer failed" }, 400);
     }
   }
+
   if (action === "confirm_understanding") {
     try {
       const analysis = await confirmUnderstanding(admin, task_id, String(body.analysis_id || ""), auth.user.id);
-      await admin.from("test_tasks").update({ status: "ready_for_demo", summary_desc: "需求理解已确认，可以生成 Demo" }).eq("id", task_id);
       await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "requirement_understanding_confirmed", task_id, details: { analysis_id: analysis.id, version: analysis.version } });
-      return out({ ok: true, status: "confirmed", analysis });
+      EdgeRuntime.waitUntil(runDemoGeneration(analysis.id, `confirmed-demo:${analysis.id}`, "understanding_confirmation").catch(() => undefined));
+      return out({ ok: true, status: "generating_demo", analysis }, 202);
     } catch (error) {
       return out({ ok: false, error: error instanceof Error ? error.message : "Understanding confirmation failed" }, 400);
     }
   }
+
   if (action === "generate_demo") {
     try {
-      const generation = await generateDemo(admin, task_id, String(body.analysis_id || ""), String(body.idempotency_key || ""));
-      await admin.from("test_tasks").update({ status: "demo_review", summary_desc: "Cloudflare Demo 已生成，等待需求方确认" }).eq("id", task_id);
-      await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "demo_generated", task_id, details: { generation_id: generation.id, model: generation.model } });
+      const generation = await runDemoGeneration(task_id ? String(body.analysis_id || "") : "", String(body.idempotency_key || crypto.randomUUID()), "resume_or_legacy_action");
       return out({ ok: true, status: generation.status, generation });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Demo generation failed";
       return out({ ok: false, error: message }, message.includes("NOT_CONFIGURED") ? 503 : 400);
     }
   }
+
   if (action === "confirm_demo") {
     try {
       const generation = await confirmDemo(admin, task_id, String(body.generation_id || ""), auth.user.id);
@@ -141,6 +219,7 @@ Deno.serve(async (request) => {
       return out({ ok: false, error: error instanceof Error ? error.message : "Demo confirmation failed" }, 400);
     }
   }
+
   if (action === "generate_final") {
     try {
       const generation = await generateFinal(admin, task_id, String(body.demo_generation_id || ""), String(body.idempotency_key || ""));
@@ -152,6 +231,7 @@ Deno.serve(async (request) => {
       return out({ ok: false, error: message }, message.includes("NOT_CONFIGURED") ? 503 : 400);
     }
   }
+
   if (action === "submit_framework") {
     const job = (await admin.from("ai_design_jobs").select("*").eq("task_id", task_id).single()).data;
     const framework = job?.analysis?.framework;
@@ -161,9 +241,11 @@ Deno.serve(async (request) => {
     await admin.from("ai_design_jobs").update({ status: "framework_submitted" }).eq("task_id", task_id);
     return out({ ok: true, status: "framework_submitted" });
   }
+
   if (action === "analyze" || action === "reanalyze") {
     const result = await executeAnalysis();
-    return out(result, result.ok ? 200 : result.error === "DEEPSEEK_MODEL_NOT_CONFIGURED" ? 503 : 400);
+    return out(result, result.ok ? 200 : result.status === "demo_failed" ? 400 : result.error === "DEEPSEEK_MODEL_NOT_CONFIGURED" ? 503 : 400);
   }
+
   return out({ ok: false, error: "Unsupported AI workflow action" }, 400);
 });
