@@ -1,24 +1,19 @@
 import type { NormalizedSourceDocument } from "./source-types.ts";
 
-export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v4";
+export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v5";
 
 export function extractExplicitDesignScope(text: string): { marker: string; text: string } | null {
   const normalized = String(text || "").replace(/\r/g, "");
   const explicitMarker = /[^\n]*(?:分割线[^\n]*)?(?:以下|下面)[^\n]*(?:小蓝书)?(?:配图|页面|海报|设计稿)[^\n]*\n/i.exec(normalized);
   let start = explicitMarker ? (explicitMarker.index + explicitMarker[0].length) : -1;
   let marker = explicitMarker?.[0]?.trim() || "";
-
   if (start >= 0) {
     const imageMarkerOffset = normalized.slice(start).search(/【图片】\s*\n?/);
     if (imageMarkerOffset >= 0 && imageMarkerOffset < 500) start += imageMarkerOffset;
   } else {
     const imageMarker = /【图片】\s*\n?/.exec(normalized);
-    if (imageMarker) {
-      start = imageMarker.index;
-      marker = imageMarker[0].trim();
-    }
+    if (imageMarker) { start = imageMarker.index; marker = imageMarker[0].trim(); }
   }
-
   if (start < 0) return null;
   const scoped = normalized.slice(start).trim();
   const pageCount = (scoped.match(/第\s*\d+\s*页/g) || []).length;
@@ -41,7 +36,6 @@ export function buildRequirementPrompt(
       "DESIGN_SCOPE_END",
       "FULL_SOURCE_CONTEXT_BEGIN",
     ] : ["DESIGN_SCOPE_PRIORITY=NONE", "FULL_SOURCE_CONTEXT_BEGIN"];
-
     return [
       `SOURCE_ID=${source.id}`,
       `SOURCE_TYPE=${source.sourceType}`,
@@ -57,6 +51,12 @@ export function buildRequirementPrompt(
 系统业务规格（属于确定规则，不是 AI 建议）：
 - 当任务渠道包含“小蓝书”时，画布尺寸固定为 1242x1660px。必须直接把“1242x1660px”写入 dimensions，不得追问尺寸。
 - 如果需求方另有明确尺寸要求，以需求方明确写出的尺寸为准。
+
+视觉参考规则：
+- 任务记录中的 visual_references 表示需求方已经上传并绑定给生图模型的视觉参考图。只要 visual_references 非空，就视为“已有视觉/主视觉参考”，不得再追问“是否有参考图、品牌色、主视觉参考”。
+- is_primary=true 的参考图是主参考。note 是需求方对该图的参考说明，应进入视觉方向判断。
+- 你当前只能看到参考图的文件名和需求方备注，不能假装看到了图片中的具体颜色、人物或构图；不要凭空描述像素内容。真正的图片会在 Demo 生图阶段直接作为 FLUX 输入。
+- visual_direction 可以写“以主参考图为主要视觉基准，并结合备注执行”，但不要把你未实际看到的视觉细节编造成事实。
 
 内容作用域规则（最高优先级）：
 - 如果某个来源出现 DESIGN_SCOPE_PRIORITY=EXPLICIT，说明来源作者已经明确标出了“真正要做成设计稿/配图的内容”。deliverables、pages、copy、layout_plan、success_criteria 必须优先且主要依据 DESIGN_SCOPE_BEGIN 与 DESIGN_SCOPE_END 之间的内容。
