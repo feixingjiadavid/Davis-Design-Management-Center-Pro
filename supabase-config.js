@@ -42,9 +42,11 @@ export const supabase = sdk.createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
   window.__davisSupabaseSdkSource = sdk.source;
-  import('./js/visual-reference-ui.js?v=uat-qwen-vision-20260814c')
+  import('./js/required-design-assets-ui.js?v=uat-assets-v1')
+    .then(module => module.bootstrapRequiredDesignAssetsUI(supabase))
+    .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-v2'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
-    .catch(error => console.error('视觉参考模块加载失败:', error));
+    .catch(error => console.error('设计输入模块加载失败:', error));
   import('./js/ai-auto-recovery.js?v=uat-state-recovery-v46b')
     .then(module => module.bootstrapAiAutoRecovery(supabase))
     .catch(error => console.error('AI 自动恢复模块加载失败:', error));
