@@ -1,5 +1,6 @@
-import { generateCloudflareDemo } from "./demo-client.ts";
-import { generateSeedreamFinal } from "./seedream-client.ts";
+import { generateSeedreamDemo, generateSeedreamFinal, SEEDREAM_DEMO_MODEL } from "./seedream-client.ts";
+
+export const SEEDREAM_DEMO_PROMPT_VERSION = "seedream-demo-design-director-v1";
 
 export function assertCanGenerateDemo(analysisStatus: string) {
   if (analysisStatus !== "confirmed") throw new Error("UNDERSTANDING_CONFIRMATION_REQUIRED");
@@ -36,11 +37,13 @@ export function selectGenerationPages(brief: Record<string, unknown>): DemoPage[
     title: String(page?.title || `第${offset + 1}页`),
     copy: Array.isArray(page?.copy) ? page.copy.map(String).filter(Boolean) : [],
   })).sort((a, b) => a.index - b.index);
+
   if (!pages.length) {
     const fallbackCopy = Array.isArray(brief.copy) ? brief.copy.map(String).filter(Boolean) : [];
     if (!fallbackCopy.length) throw new Error("DEMO_PAGE_CONTENT_REQUIRED");
     return [{ index: 1, title: String(brief.goal || "设计页"), copy: fallbackCopy }];
   }
+
   const expected = Array.isArray(brief.deliverables)
     ? brief.deliverables.reduce((max: number, item: any) => Math.max(max, Number(item?.quantity || 0)), 0)
     : 0;
@@ -54,175 +57,146 @@ export function selectGenerationPages(brief: Record<string, unknown>): DemoPage[
 export function selectModelReferences<T extends { is_primary?: boolean; sort_order?: number }>(references: T[]): T[] {
   return [...references]
     .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)) || Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .slice(0, 4);
+    .slice(0, 10);
 }
 
-export function selectModelInputs<T extends { is_primary?: boolean; sort_order?: number }, A extends { sort_order?: number }>(styleReferences: T[], assets: A[]): Array<(T | A) & { input_kind: "style" | "asset" }> {
-  const style = selectModelReferences(styleReferences).slice(0, 1).map((item) => ({ ...item, input_kind: "style" as const }));
+export function selectModelInputs<T extends { is_primary?: boolean; sort_order?: number }, A extends { sort_order?: number }>(
+  styleReferences: T[],
+  assets: A[],
+): Array<(T | A) & { input_kind: "style" | "asset" }> {
+  const style = selectModelReferences(styleReferences)
+    .slice(0, 1)
+    .map((item) => ({ ...item, input_kind: "style" as const }));
   const required = [...assets]
     .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .slice(0, Math.max(0, 4 - style.length))
+    .slice(0, Math.max(0, 10 - style.length))
     .map((item) => ({ ...item, input_kind: "asset" as const }));
   return [...style, ...required];
 }
 
+function strings(value: unknown) {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+}
+
 function compactVisualAnalysis(brief: Record<string, unknown>) {
   const value = brief.visual_reference_analysis;
-  if (!value || typeof value !== "object") return "无千问视觉分析";
+  if (!value || typeof value !== "object") return "无视觉参考分析；由专业设计判断构图，但不得虚构参考图特征。";
   const a = value as Record<string, any>;
   return [
     `整体风格：${String(a.style_summary || "")}`,
-    `风格关键词：${Array.isArray(a.style_keywords) ? a.style_keywords.join("、") : ""}`,
-    `构图规律：${Array.isArray(a.composition_patterns) ? a.composition_patterns.join("；") : ""}`,
-    `字体气质：${Array.isArray(a.typography_style) ? a.typography_style.join("；") : ""}`,
-    `色彩：${Array.isArray(a.color_palette) ? a.color_palette.join("、") : ""}`,
-    `图片处理：${Array.isArray(a.image_treatment) ? a.image_treatment.join("；") : ""}`,
-    `材质纹理：${Array.isArray(a.texture_materials) ? a.texture_materials.join("；") : ""}`,
-    `图形元素：${Array.isArray(a.graphic_elements) ? a.graphic_elements.join("；") : ""}`,
-    `层级：${Array.isArray(a.hierarchy_rules) ? a.hierarchy_rules.join("；") : ""}`,
+    `风格关键词：${strings(a.style_keywords).join("、")}`,
+    `构图规律：${strings(a.composition_patterns).join("；")}`,
+    `字体气质：${strings(a.typography_style).join("；")}`,
+    `色彩：${strings(a.color_palette).join("、")}`,
+    `图片处理：${strings(a.image_treatment).join("；")}`,
+    `材质纹理：${strings(a.texture_materials).join("；")}`,
+    `图形元素：${strings(a.graphic_elements).join("；")}`,
+    `层级：${strings(a.hierarchy_rules).join("；")}`,
     `主参考重点：${String(a.primary_reference_focus || "")}`,
-    `禁止照搬：${Array.isArray(a.avoid_copying) ? a.avoid_copying.join("；") : ""}`,
+    `禁止照搬：${strings(a.avoid_copying).join("；")}`,
   ].filter((line) => !line.endsWith("：")).join("\n");
 }
 
-export function demoPagePrompt(brief: Record<string, unknown>, page: DemoPage, styleReferences: VisualReference[], assets: DesignAsset[] = []) {
-  const visualDirection = Array.isArray(brief.visual_direction) ? brief.visual_direction : [];
-  const layoutPlan = Array.isArray(brief.layout_plan) ? brief.layout_plan : [];
-  const constraints = Array.isArray(brief.constraints) ? brief.constraints : [];
-  const recommendations = Array.isArray(brief.recommendations) ? brief.recommendations.map((item: any) => item?.value).filter(Boolean) : [];
-  const styleNotes = styleReferences.map((reference, index) => `${index === 0 ? "主风格参考" : `风格参考${index + 1}`}：${reference.file_name}${reference.note ? `（${reference.note}）` : ""}`);
-  const assetNotes = assets.map((asset, index) => `必用素材${index + 1}：${asset.asset_role || "设计元素"} / ${asset.file_name}${asset.note ? `（${asset.note}）` : ""}`);
+export function demoPagePrompt(
+  brief: Record<string, unknown>,
+  page: DemoPage,
+  styleReferences: VisualReference[],
+  assets: DesignAsset[] = [],
+) {
+  const visualDirection = strings(brief.visual_direction);
+  const layoutPlan = strings(brief.layout_plan);
+  const constraints = strings(brief.constraints);
+  const audience = strings(brief.audience);
+  const successCriteria = strings(brief.success_criteria);
+  const recommendations = Array.isArray(brief.recommendations)
+    ? brief.recommendations.map((item: any) => String(item?.value || "").trim()).filter(Boolean)
+    : [];
+  const styleNotes = selectModelReferences(styleReferences).slice(0, 1).map((reference) =>
+    `图1 主风格参考：${reference.file_name}${reference.note ? `（${reference.note}）` : ""}。只学习设计语言，不复制其中的内容语义。`
+  );
+  const assetNotes = [...assets]
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+    .slice(0, 9)
+    .map((asset, index) =>
+      `图${index + 2} 必用内容资产：${asset.asset_role || "设计素材"} / ${asset.file_name}${asset.note ? `（${asset.note}）` : ""}。保持原始身份和形象特征，不得重绘成另一对象。`
+    );
+  const exactCopy = page.copy.map((line, index) => `${index + 1}. ${line}`).join("\n");
 
-  return `你是专业企业视觉设计师。现在只生成第 ${page.index} 页的“无文字视觉底图”，用于确认构图、视觉语言、主视觉与空间层次。中文文字和必用品牌素材会由系统后置精确叠加，因此你不能自己重写文字，也不能把风格参考里的内容照搬过来。
+  return `你是一名资深企业品牌视觉总监兼平面设计师。请直接生成一张可供需求方评审的“完整设计 Demo 页面”，不是草图、不是背景底图、不是素材拼贴板，也不是 Word/PPT 信息页。
 
-【本页】${page.title}
-【本页内容语义，仅用于帮助你理解主题；禁止把这些字画进图片】
-${page.copy.map((line) => `- ${line}`).join("\n")}
+【项目目标】
+${String(brief.goal || page.title)}
 
-【千问视觉对风格参考的真实分析】
+【当前页面】
+第 ${page.index} 页：《${page.title}》
+
+【目标受众】
+${audience.join("、") || "企业内部员工"}
+
+【本页正式文案】
+以下文案是这张页面唯一允许出现的业务文字。必须尽量准确、清晰、完整地呈现，不得把参考图里的原始标题、品牌、地点、人物说明或其他文案带进来：
+${exactCopy}
+
+【专业视觉方向】
+${visualDirection.join("；") || "根据项目目标做现代、专业、有视觉中心的企业传播设计"}
+
+【版式与信息层级】
+${layoutPlan.join("；") || "先建立主视觉与主标题，再组织次级信息；控制信息密度，保留足够留白和安全边距"}
+
+【视觉参考的抽象分析】
 ${compactVisualAnalysis(brief)}
 
-【DeepSeek整理后的视觉方向】${visualDirection.join("；") || "以风格参考为主"}
-【本页版式规划】${layoutPlan.join("；") || "由专业设计判断"}
-【硬性限制】${constraints.join("；") || "无"}
-【AI设计建议】${recommendations.join("；") || "无"}
-【风格参考：只学设计语言】
-${styleNotes.join("\n") || "无"}
-【必用素材：只用于理解预留空间，素材本体会后置精确叠加】
-${assetNotes.join("\n") || "无"}
+【参考图与必用素材身份】
+${[...styleNotes, ...assetNotes].join("\n") || "无图像输入"}
 
-要求：
-1. input image 0（若存在）只是主风格参考，只学习配色、构图、材质、拼贴节奏、图形语言和视觉密度。严禁照搬里面的具体人物、猫、摩托车、地点、标题、Logo或品牌内容。
-2. 后续 input images（若存在）是必用素材，例如公司IP、Logo、人物或主视觉。系统会在生成后精确叠加这些原始素材。你只需为它们预留合理位置和空间，不要自行重画、改造、复制或生成第二份。
-3. 禁止生成任何可读文字、汉字、字母、数字、伪文字、Logo字样、水印或标牌文字。所有正式文字由系统后置排版层完成。
-4. 必须像真正的小蓝书宣传视觉：有明确主视觉、有图形/插画/拼贴/空间层次、有视觉中心；禁止生成Word/PPT式纯码字页面。
-5. 上部约35%区域预留给标题与关键信息，保持视觉干净；中下部用于主视觉和图形元素。若有必用IP/人物素材，为右下或下部预留完整、安全、不拥挤的位置。
-6. 不得添加其他页面、正文区、评论区、联系人、链接、魔法指令等不属于本页的内容。
-7. 单页完整竖版构图，四周保留安全边距，核心元素不得裁切。`;
+【硬性限制】
+${constraints.join("；") || "无额外限制"}
+
+【验收标准】
+${successCriteria.join("；") || "专业、高级、信息层级清楚、品牌资产准确、画面完整"}
+
+【AI设计建议】
+${recommendations.join("；") || "无"}
+
+必须执行以下设计原则：
+1. 把自己当成真正的设计总监：先形成视觉概念、主次关系、空间结构和节奏，再安排素材；禁止把收到的素材机械地逐个贴进画面。
+2. 图1（如果存在）只是“风格参考”。只学习配色、构图、材质、图形语言、字体气质、信息密度和节奏。严禁照搬其中的具体人物、猫、摩托车、建筑、地点、标题、Logo、品牌名称、原始文案或主题语义。
+3. 图2及之后（如果存在）是“必用内容资产”。IP、Logo、人物、主视觉或品牌元素必须保持其原始身份和主要形象特征；不要随意换脸、换Logo、重绘成别的角色或生成第二套错误版本。
+4. 必用素材是为了服务设计，不代表每个素材都必须同等大。Logo通常是品牌签名；IP可以是视觉焦点或点睛元素，具体大小必须服从本页主题和信息层级。
+5. 设计必须有明确主视觉、视觉中心、层次、留白和节奏，达到成熟企业活动海报/品牌传播物料的完成度。禁止廉价拼贴、素材堆砌、模板套壳、Word/PPT式排版。
+6. 中文排版要专业：标题有主次，正文有可读性，避免密密麻麻铺满整页；不得新增业务文案，不得用参考图文字填补空白。
+7. 对风格参考做“抽象迁移”而不是“语义复制”。即使参考图是复古拼贴，也只能迁移其视觉语法，最终主题、人物、品牌、文案必须完全属于当前项目。
+8. 一次只生成这一页完整竖版画面。四周保留安全边距，核心标题、人物/IP、Logo和正文不得被裁切。
+9. 优先专业、高级、稳定、品牌统一；如果参考图的某些表现与当前企业品牌调性冲突，以当前项目目标、硬性限制和专业设计判断为准。
+10. 输出必须是一张完整可评审的设计页面，文字、图形、素材与背景是一个整体设计，不要生成“待后期再排版”的空底图。`;
 }
 
-function escapeXml(value: unknown) {
-  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[ch] || ch));
-}
-
-function encodeBase64Utf8(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunk) binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
-  return btoa(binary);
-}
-
-function wrapText(value: string, maxChars: number) {
-  const chars = Array.from(String(value || "").trim());
-  if (!chars.length) return [];
-  const lines: string[] = [];
-  for (let index = 0; index < chars.length; index += maxChars) lines.push(chars.slice(index, index + maxChars).join(""));
-  return lines;
-}
-
-function isCollageStyle(brief: Record<string, unknown>) {
-  const analysis = brief.visual_reference_analysis as any;
-  const words = [analysis?.style_summary, ...(Array.isArray(analysis?.style_keywords) ? analysis.style_keywords : [])].map(String).join(" ");
-  return /拼贴|复古|杂志|贴纸|街头|潮流/.test(words);
-}
-
-function assetSvg(asset: DesignAsset, index: number, width: number, height: number) {
-  const role = String(asset.asset_role || "");
-  const isLogo = /logo|标识|品牌标/i.test(role);
-  const boxW = isLogo ? Math.round(width * 0.22) : Math.round(width * 0.31);
-  const boxH = isLogo ? Math.round(height * 0.10) : Math.round(height * 0.30);
-  const positions = [
-    { x: width - boxW - 58, y: isLogo ? 58 : height - boxH - 70 },
-    { x: 58, y: height - boxH - 70 },
-    { x: Math.round((width - boxW) / 2), y: height - boxH - 64 },
-    { x: width - boxW - 58, y: Math.round(height * 0.54) },
-    { x: 58, y: Math.round(height * 0.54) },
-    { x: Math.round((width - boxW) / 2), y: Math.round(height * 0.50) },
-  ];
-  const pos = positions[index] || positions[positions.length - 1];
-  return `<g><image href="${escapeXml(asset.data_url)}" x="${pos.x}" y="${pos.y}" width="${boxW}" height="${boxH}" preserveAspectRatio="xMidYMid meet"/><text x="${pos.x}" y="${Math.max(24, pos.y - 10)}" font-size="16" fill="rgba(255,255,255,.68)" font-family="Microsoft YaHei,PingFang SC,sans-serif">${escapeXml(role)}</text></g>`;
+export function isReusableSeedreamDemo(
+  row: Record<string, any> | null | undefined,
+  model = SEEDREAM_DEMO_MODEL,
+  promptVersion = SEEDREAM_DEMO_PROMPT_VERSION,
+) {
+  return Boolean(
+    row &&
+    row.kind === "demo" &&
+    row.model === model &&
+    row.prompt_version === promptVersion &&
+    ["generating", "ready", "confirmed"].includes(String(row.status || "")),
+  );
 }
 
 export function composeDeterministicDemo(
   background: Record<string, any>,
-  size: { width: number; height: number },
+  _size: { width: number; height: number },
   page: DemoPage,
   assets: DesignAsset[] = [],
-  brief: Record<string, unknown> = {},
+  _brief: Record<string, unknown> = {},
 ) {
-  const backgroundUrl = String(background?.image_url || "");
-  if (!backgroundUrl) return { ...background, text_rendering: "provider_only", asset_count: assets.length };
-
-  const collage = isCollageStyle(brief);
-  const copy = page.copy.map(String).filter(Boolean);
-  const titleSource = copy[0] || page.title;
-  const subtitleSource = copy[1] || "";
-  const bodySource = copy.slice(2);
-  const titleLines = wrapText(titleSource, 14).slice(0, 3);
-  const subtitleLines = wrapText(subtitleSource, 22).slice(0, 3);
-  const bodyLines = bodySource.flatMap((line) => wrapText(line, assets.length ? 25 : 34));
-  const bodyFont = Math.max(19, Math.min(29, Math.floor(470 / Math.max(1, bodyLines.length) * 0.88)));
-  const bodyLineHeight = Math.round(bodyFont * 1.48);
-  const bodyWidth = assets.length ? Math.round(size.width * 0.58) : size.width - 140;
-  const bodyX = 70;
-  const bodyY = Math.round(size.height * 0.62);
-  const bodyH = Math.max(180, Math.min(560, bodyLines.length * bodyLineHeight + 70));
-
-  const titleFill = collage ? "#fff8df" : "#ffffff";
-  const titleStroke = collage ? "#101114" : "rgba(0,0,0,.35)";
-  const titleShadow = collage ? "#ff3e8a" : "rgba(0,0,0,.45)";
-  const titleSvg = titleLines.map((line, index) => {
-    const y = 125 + index * 78;
-    return `<text x="72" y="${y}" font-size="62" font-weight="900" fill="${titleFill}" stroke="${titleStroke}" stroke-width="${collage ? 8 : 2}" paint-order="stroke fill" font-family="Microsoft YaHei,PingFang SC,sans-serif"><tspan x="78" y="${y + 7}" fill="${titleShadow}" stroke="none">${escapeXml(line)}</tspan><tspan x="72" y="${y}">${escapeXml(line)}</tspan></text>`;
-  }).join("");
-  const subtitleStart = 145 + titleLines.length * 78;
-  const subtitleSvg = subtitleLines.map((line, index) => `<text x="76" y="${subtitleStart + index * 46}" font-size="34" font-weight="800" fill="#ffffff" font-family="Microsoft YaHei,PingFang SC,sans-serif">${escapeXml(line)}</text>`).join("");
-  const bodySvg = bodyLines.map((line, index) => `<text x="${bodyX + 28}" y="${bodyY + 48 + index * bodyLineHeight}" font-size="${bodyFont}" font-weight="${index < 2 ? 700 : 500}" fill="#151515" font-family="Microsoft YaHei,PingFang SC,sans-serif">${escapeXml(line)}</text>`).join("");
-  const assetsSvg = assets.slice(0, 6).map((asset, index) => assetSvg(asset, index, size.width, size.height)).join("");
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="0 0 ${size.width} ${size.height}">
-    <defs>
-      <linearGradient id="topShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(0,0,0,.58)"/><stop offset="1" stop-color="rgba(0,0,0,0)"/></linearGradient>
-      <filter id="paperShadow"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-opacity=".24"/></filter>
-    </defs>
-    <image href="${escapeXml(backgroundUrl)}" x="0" y="0" width="${size.width}" height="${size.height}" preserveAspectRatio="xMidYMid slice"/>
-    <rect x="0" y="0" width="${size.width}" height="${Math.round(size.height * 0.43)}" fill="url(#topShade)"/>
-    ${collage ? `<rect x="58" y="${Math.max(82, subtitleStart - 18)}" width="${Math.min(size.width - 116, 520)}" height="18" fill="#ffd84d" transform="rotate(-1 58 ${subtitleStart})"/>` : ""}
-    ${titleSvg}
-    ${subtitleSvg}
-    ${bodyLines.length ? `<rect x="${bodyX}" y="${bodyY}" rx="22" width="${bodyWidth}" height="${bodyH}" fill="rgba(255,250,239,.94)" filter="url(#paperShadow)"/>${bodySvg}` : ""}
-    ${assetsSvg}
-  </svg>`;
-
   return {
     ...background,
-    background_image_url: backgroundUrl,
-    image_url: `data:image/svg+xml;base64,${encodeBase64Utf8(svg)}`,
-    size,
-    text_rendering: "deterministic_svg",
-    exact_copy: copy,
+    exact_copy: page.copy.map(String).filter(Boolean),
     asset_count: assets.length,
+    text_rendering: "provider_only",
   };
 }
 
@@ -231,20 +205,24 @@ function finalPrompt(brief: Record<string, unknown>, demoOutput: Record<string, 
 }
 
 async function findIdempotent(admin: any, key: string) {
+  if (!key) return null;
   return (await admin.from("uat_design_generations").select("*").eq("idempotency_key", key).maybeSingle()).data;
 }
 
-async function findActiveDemo(admin: any, taskId: string, analysisId: string, pageIndex: number) {
-  return (await admin.from("uat_design_generations")
+async function findActiveDemo(admin: any, taskId: string, analysisId: string, pageIndex: number, model: string) {
+  const row = (await admin.from("uat_design_generations")
     .select("*")
     .eq("task_id", taskId)
     .eq("analysis_id", analysisId)
     .eq("kind", "demo")
     .eq("page_index", pageIndex)
+    .eq("model", model)
+    .eq("prompt_version", SEEDREAM_DEMO_PROMPT_VERSION)
     .in("status", ["generating", "ready", "confirmed"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()).data;
+  return isReusableSeedreamDemo(row, model, SEEDREAM_DEMO_PROMPT_VERSION) ? row : null;
 }
 
 async function loadVisualReferences(admin: any, taskId: string) {
@@ -265,72 +243,121 @@ async function loadDesignAssets(admin: any, taskId: string) {
   return result.data || [];
 }
 
-async function generateDemoPage(admin: any, taskId: string, analysis: any, page: DemoPage, pageCount: number, references: VisualReference[], assets: DesignAsset[]) {
-  const existing = await findActiveDemo(admin, taskId, analysis.id, page.index);
+async function generateDemoPage(
+  admin: any,
+  taskId: string,
+  analysis: any,
+  page: DemoPage,
+  pageCount: number,
+  references: VisualReference[],
+  assets: DesignAsset[],
+  userJwt: string,
+) {
+  const model = SEEDREAM_DEMO_MODEL;
+  const existing = await findActiveDemo(admin, taskId, analysis.id, page.index, model);
   if (existing) return existing;
+
   const idempotencyKey = crypto.randomUUID();
-  const model = Deno.env.get("CLOUDFLARE_DEMO_MODEL") || "unconfigured";
   const queued = await admin.from("uat_design_generations").insert({
     task_id: taskId,
     analysis_id: analysis.id,
     kind: "demo",
     model,
-    prompt_version: "demo-style-assets-exact-text-v3",
+    prompt_version: SEEDREAM_DEMO_PROMPT_VERSION,
     idempotency_key: idempotencyKey,
     page_index: page.index,
     page_count: pageCount,
     status: "generating",
   }).select("*").single();
   if (queued.error) throw queued.error;
+
   try {
     const size = resolveDemoSize(analysis.brief);
     const modelInputs = selectModelInputs(references, assets);
-    const providerInputs = modelInputs.map((item: any) => ({ file_name: item.file_name, data_url: item.data_url }));
-    const background = await generateCloudflareDemo(demoPagePrompt(analysis.brief, page, references, assets), size, providerInputs);
-    const output = composeDeterministicDemo(background, size, page, assets, analysis.brief);
+    const prompt = demoPagePrompt(analysis.brief, page, references, assets);
+    const generated = await generateSeedreamDemo(
+      prompt,
+      size,
+      modelInputs.map((item: ModelInput) => ({
+        file_name: item.file_name,
+        data_url: item.data_url,
+        input_kind: item.input_kind,
+        role: item.input_kind === "asset" ? String((item as DesignAsset).asset_role || item.file_name) : "主风格参考",
+      })),
+      { taskId, pageIndex: page.index, pageCount },
+      userJwt,
+    );
+
+    const output = {
+      ...generated,
+      page_index: page.index,
+      page_count: pageCount,
+      page_title: page.title,
+      exact_copy: page.copy,
+      style_reference_count: references.length,
+      design_asset_count: assets.length,
+      model_input_count: modelInputs.length,
+      prompt_version: SEEDREAM_DEMO_PROMPT_VERSION,
+    };
     const updated = await admin.from("uat_design_generations").update({
       status: "ready",
-      output: { ...output, page_index: page.index, page_count: pageCount, page_title: page.title, style_reference_count: references.length, design_asset_count: assets.length },
+      output,
       updated_at: new Date().toISOString(),
     }).eq("id", queued.data.id).select("*").single();
     if (updated.error) throw updated.error;
     return updated.data;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Demo generation failed";
-    await admin.from("uat_design_generations").update({ status: "failed", error_message: message, updated_at: new Date().toISOString() }).eq("id", queued.data.id);
+    await admin.from("uat_design_generations").update({
+      status: "failed",
+      error_message: message,
+      updated_at: new Date().toISOString(),
+    }).eq("id", queued.data.id);
     throw error;
   }
 }
 
-export async function generateDemoSet(admin: any, taskId: string, analysisId: string) {
+export async function generateDemoSet(admin: any, taskId: string, analysisId: string, userJwt: string) {
+  if (!String(userJwt || "").trim()) throw new Error("UAT_JWT_REQUIRED");
   const analysis = (await admin.from("uat_requirement_analyses").select("*").eq("id", analysisId).eq("task_id", taskId).single()).data;
   if (!analysis) throw new Error("ANALYSIS_NOT_FOUND");
   assertCanGenerateDemo(analysis.status);
+
   const task = (await admin.from("test_tasks").select("request_type").eq("id", taskId).single()).data;
   const [references, assets] = await Promise.all([loadVisualReferences(admin, taskId), loadDesignAssets(admin, taskId)]);
   if ((task?.request_type === "平面视觉" || !task?.request_type) && references.length === 0) throw new Error("VISUAL_REFERENCE_REQUIRED");
   if (references.length > 0 && !analysis.brief?.visual_reference_analysis) throw new Error("QWEN_VISUAL_ANALYSIS_REQUIRED");
+
   const pages = selectGenerationPages(analysis.brief);
-  return await Promise.all(pages.map((page) => generateDemoPage(admin, taskId, analysis, page, pages.length, references, assets)));
+  const results = [];
+  for (const page of pages) {
+    results.push(await generateDemoPage(admin, taskId, analysis, page, pages.length, references, assets, userJwt));
+  }
+  return results;
 }
 
-export async function generateDemo(admin: any, taskId: string, analysisId: string, idempotencyKey: string) {
+export async function generateDemo(admin: any, taskId: string, analysisId: string, idempotencyKey: string, userJwt = "") {
   const existing = idempotencyKey ? await findIdempotent(admin, idempotencyKey) : null;
-  if (existing) return existing;
-  const set = await generateDemoSet(admin, taskId, analysisId);
+  if (existing && isReusableSeedreamDemo(existing)) return existing;
+  const set = await generateDemoSet(admin, taskId, analysisId, userJwt);
   return set[0];
 }
 
 export async function confirmDemo(admin: any, taskId: string, generationId: string, userId: string) {
   const demo = (await admin.from("uat_design_generations").select("*").eq("id", generationId).eq("task_id", taskId).eq("kind", "demo").single()).data;
   if (!demo || demo.status !== "ready") throw new Error("READY_DEMO_REQUIRED");
-  const updated = await admin.from("uat_design_generations").update({ status: "confirmed", confirmed_by: userId, confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", generationId).select("*").single();
+  const updated = await admin.from("uat_design_generations").update({
+    status: "confirmed",
+    confirmed_by: userId,
+    confirmed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", generationId).select("*").single();
   if (updated.error) throw updated.error;
   return updated.data;
 }
 
 export async function generateFinal(admin: any, taskId: string, demoGenerationId: string, idempotencyKey: string) {
-  const existing = await findIdempotent(admin, idempotencyKey);
+  const existing = idempotencyKey ? await findIdempotent(admin, idempotencyKey) : null;
   if (existing) return existing;
   const demo = (await admin.from("uat_design_generations").select("*").eq("id", demoGenerationId).eq("task_id", taskId).single()).data;
   if (!demo) throw new Error("DEMO_NOT_FOUND");
@@ -338,6 +365,7 @@ export async function generateFinal(admin: any, taskId: string, demoGenerationId
   const analysis = (await admin.from("uat_requirement_analyses").select("*").eq("id", demo.analysis_id).single()).data;
   if (!analysis) throw new Error("ANALYSIS_NOT_FOUND");
   const model = Deno.env.get("SEEDREAM_MODEL") || "unconfigured";
+  const key = idempotencyKey || crypto.randomUUID();
   const queued = await admin.from("uat_design_generations").insert({
     task_id: taskId,
     analysis_id: analysis.id,
@@ -345,16 +373,17 @@ export async function generateFinal(admin: any, taskId: string, demoGenerationId
     kind: "final",
     model,
     prompt_version: "seedream-final-v2-exact-copy-assets",
-    idempotency_key: idempotencyKey,
+    idempotency_key: key,
     page_index: demo.page_index,
     page_count: demo.page_count,
     status: "generating",
   }).select("*").single();
   if (queued.error) {
-    const raced = await findIdempotent(admin, idempotencyKey);
+    const raced = await findIdempotent(admin, key);
     if (raced) return raced;
     throw queued.error;
   }
+
   try {
     const output = await generateSeedreamFinal(finalPrompt(analysis.brief, demo.output));
     const updated = await admin.from("uat_design_generations").update({ status: "ready", output, updated_at: new Date().toISOString() }).eq("id", queued.data.id).select("*").single();
