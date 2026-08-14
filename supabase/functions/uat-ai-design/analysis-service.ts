@@ -5,7 +5,7 @@ import { classifyQuestion, selectBoundedQuestions } from "./clarification-policy
 import { analyzeVisualReferenceSet } from "./qwen-vision-client.ts";
 
 export function decideAnalysisStatus(brief: RequirementBrief) {
-  return brief.missing_information.length > 0 || brief.conflicts.length > 0 || brief.clarification_questions.length > 0
+  return brief.missing_information.length > 0 || brief.clarification_questions.length > 0
     ? "clarification_required"
     : "understanding_ready";
 }
