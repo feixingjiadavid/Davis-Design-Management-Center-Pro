@@ -1,328 +1,48 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const UAT_URL = "https://bjzfkwxrvytgphvgwltl.supabase.co";
-const UAT_PUBLISHABLE_KEY = "sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV";
-const SEEDREAM_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/images/generations";
-const SEEDREAM_MODEL = "doubao-seedream-4-0-250828";
-const SEEDREAM_PROVIDER_SIZE = "1728x2304";
-const INPUT_BUCKET = "seedance-inputs";
-const DRIVE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
-const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
-const SEEDREAM_DRIVE_ROOT_FOLDER_ID = "1vg12NJfXRXp8KBkvX8uh2RGTYmN0BPWu";
-const ALLOWED_EMAILS = new Set([
-  "uat.requester@webank.com",
-  "davis.design.ai@webank.com",
-  "uat.leader@webank.com",
-  "uat.admin@webank.com",
-]);
+const UAT_URL="https://bjzfkwxrvytgphvgwltl.supabase.co";
+const UAT_PUBLISHABLE_KEY="sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV";
+const SEEDREAM_ENDPOINT="https://ark.cn-beijing.volces.com/api/v3/images/generations";
+const SEEDREAM_MODEL="doubao-seedream-4-0-250828";
+const SEEDREAM_PROVIDER_SIZE="1728x2304";
+const INPUT_BUCKET="seedance-inputs";
+const DRIVE_TOKEN_URL="https://oauth2.googleapis.com/token";
+const DRIVE_API="https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD_API="https://www.googleapis.com/upload/drive/v3/files";
+const SEEDREAM_DRIVE_ROOT_FOLDER_ID="1vg12NJfXRXp8KBkvX8uh2RGTYmN0BPWu";
+const ALLOWED_EMAILS=new Set(["uat.requester@webank.com","davis.design.ai@webank.com","uat.leader@webank.com","uat.admin@webank.com"]);
+const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization,content-type","Access-Control-Allow-Methods":"POST,OPTIONS","Content-Type":"application/json"};
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization,content-type",
-  "Access-Control-Allow-Methods": "POST,OPTIONS",
-  "Content-Type": "application/json",
-};
+function out(body:unknown,status=200){return new Response(JSON.stringify(body),{status,headers:CORS});}
+async function readJsonSafe(response:Response){const text=await response.text().catch(()=>"");if(!text)return{};try{return JSON.parse(text)}catch{return{raw:text}}}
+function env(name:string){return String(Deno.env.get(name)||"").trim();}
+function normalizeDimensions(width:unknown,height:unknown){const w=Number(width),h=Number(height);if(!Number.isInteger(w)||!Number.isInteger(h)||w<512||h<512||w>4096||h>4096)throw new Error("SEEDREAM_TARGET_SIZE_INVALID");return{width:w,height:h,size:`${w}x${h}`};}
+function safeTaskId(value:unknown){return String(value||"task").replace(/[^a-zA-Z0-9._-]+/g,"-").slice(0,100)||"task";}
+function outputFileName(taskId:string,pageIndex:number){const page=String(Math.max(1,Number(pageIndex)||1)).padStart(2,"0");return`${safeTaskId(taskId)}_Page${page}_Seedream4_Demo.jpg`;}
+function bytesFromBase64(value:string){const binary=atob(value);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i+=1)bytes[i]=binary.charCodeAt(i);return bytes;}
+function parseImageInput(value:unknown){const text=String(value||"").trim();if(!text)return null;if(/^https?:\/\//i.test(text))return{kind:"url" as const,url:text};const match=text.match(/^data:(image\/(?:jpeg|jpg|png));base64,(.+)$/s);if(!match)throw new Error("SEEDREAM_INPUT_IMAGE_FORMAT_INVALID");const contentType=match[1].toLowerCase().replace("image/jpg","image/jpeg");const bytes=bytesFromBase64(match[2]);if(!bytes.length||bytes.length>10*1024*1024)throw new Error("SEEDREAM_INPUT_IMAGE_SIZE_INVALID");return{kind:"bytes" as const,bytes,contentType,extension:contentType==="image/png"?"png":"jpg"};}
+async function materializeImageInputs(admin:any,taskId:string,values:unknown[]){const urls:string[]=[];for(let index=0;index<values.length;index+=1){const parsed=parseImageInput(values[index]);if(!parsed)continue;if(parsed.kind==="url"){urls.push(parsed.url);continue;}const path=`uat-seedream-inputs/${safeTaskId(taskId)}/input-${String(index+1).padStart(2,"0")}.${parsed.extension}`;const uploaded=await admin.storage.from(INPUT_BUCKET).upload(path,parsed.bytes,{contentType:parsed.contentType,upsert:true,cacheControl:"300"});if(uploaded.error)throw new Error(`SEEDREAM_INPUT_UPLOAD_FAILED:${uploaded.error.message}`);const signed=await admin.storage.from(INPUT_BUCKET).createSignedUrl(path,900);if(signed.error||!signed.data?.signedUrl)throw new Error(`SEEDREAM_INPUT_SIGN_FAILED:${signed.error?.message||"missing_url"}`);urls.push(String(signed.data.signedUrl));}return urls.slice(0,10);}
 
-function out(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: CORS });
+function extractSection(raw:string,name:string){const token=`【${name}】`;const start=raw.indexOf(token);if(start<0)return"";const rest=raw.slice(start+token.length).replace(/^\s+/,"");const next=rest.search(/\n【[^】]+】/);return(next<0?rest:rest.slice(0,next)).trim();}
+function compactSeedreamPrompt(raw:string){
+  const goal=extractSection(raw,"项目目标").slice(0,180);
+  const page=extractSection(raw,"当前页面").slice(0,120);
+  const audience=extractSection(raw,"目标受众").slice(0,120);
+  const copy=extractSection(raw,"本页正式文案").replace(/^以下文案[^：:]*[：:]\s*/s,"").slice(0,1200);
+  const direction=extractSection(raw,"专业视觉方向").slice(0,300);
+  const layout=extractSection(raw,"版式与信息层级").slice(0,300);
+  const visual=extractSection(raw,"视觉参考的抽象分析").slice(0,450);
+  const assets=extractSection(raw,"参考图与必用素材身份").slice(0,500);
+  const constraints=extractSection(raw,"硬性限制").slice(0,320);
+  const compact=`你是资深企业品牌视觉总监和平面设计师。直接设计一张完整、可评审的3:4竖版企业宣传海报，不是草图、空底图、素材拼贴板或PPT页面。\n项目：${goal}\n页面：${page}\n受众：${audience||"企业内部员工"}\n【唯一允许出现的业务文案】\n${copy}\n【视觉方向】${direction}\n【版式】${layout}\n【参考风格】${visual}\n【输入图身份】${assets}\n【硬性限制】${constraints}\n设计规则：1）图1只学习风格、构图、色彩、材质和字体气质，绝不复制其中人物、地点、标题、品牌或原文案；2）图2及以后是必用IP/Logo等内容资产，保持原始身份与主要外观，不得改Logo或重绘成另一角色；3）先建立视觉概念、中心、层次、留白和节奏，再安排素材，禁止机械贴图、廉价拼贴、模板套壳；4）Logo作为克制的品牌签名，IP大小服从信息层级；5）中文标题主次清晰，正文可读，四周保留安全边距，不新增业务文案。`;
+  return compact.slice(0,3200);
 }
 
-async function readJsonSafe(response: Response) {
-  const text = await response.text().catch(() => "");
-  if (!text) return {};
-  try { return JSON.parse(text); } catch { return { raw: text }; }
-}
+async function validateUatJwt(jwt:string){if(!jwt)throw new Error("UAT_JWT_REQUIRED");const response=await fetch(`${UAT_URL}/auth/v1/user`,{headers:{apikey:UAT_PUBLISHABLE_KEY,authorization:`Bearer ${jwt}`},signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error("UAT_JWT_INVALID");const user=await response.json();const email=String(user?.email||"").toLowerCase();if(!ALLOWED_EMAILS.has(email))throw new Error("UAT_CALLER_FORBIDDEN");return{id:String(user?.id||""),email};}
+async function googleAccessToken(admin:any){const clientId=env("GOOGLE_CLIENT_ID"),clientSecret=env("GOOGLE_CLIENT_SECRET");const{data:refreshToken,error}=await admin.rpc("get_seedance_google_refresh_token");if(error)throw new Error(`GOOGLE_REFRESH_TOKEN_READ_FAILED:${error.message}`);if(!clientId||!clientSecret||!String(refreshToken||"").trim())throw new Error("GOOGLE_OAUTH_SECRETS_MISSING");const response=await fetch(DRIVE_TOKEN_URL,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:clientId,client_secret:clientSecret,refresh_token:String(refreshToken),grant_type:"refresh_token"}),signal:AbortSignal.timeout(20000)});const payload=await readJsonSafe(response);if(!response.ok||!payload?.access_token)throw new Error(`GOOGLE_ACCESS_TOKEN_FAILED:${response.status}`);return String(payload.access_token);}
+function escapeDriveQuery(value:string){return value.replace(/\\/g,"\\\\").replace(/'/g,"\\'");}
+async function ensureTaskFolder(accessToken:string,taskId:string){const name=safeTaskId(taskId);const q=`'${SEEDREAM_DRIVE_ROOT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapeDriveQuery(name)}' and trashed=false`;const search=await fetch(`${DRIVE_API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,webViewLink)&pageSize=10`,{headers:{Authorization:`Bearer ${accessToken}`},signal:AbortSignal.timeout(20000)});const searched=await readJsonSafe(search);if(!search.ok)throw new Error(`GOOGLE_DRIVE_FOLDER_SEARCH_FAILED:${search.status}`);const existing=Array.isArray(searched?.files)?searched.files[0]:null;if(existing?.id)return existing;const created=await fetch(`${DRIVE_API}?fields=id,name,webViewLink,parents`,{method:"POST",headers:{Authorization:`Bearer ${accessToken}`,"content-type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",parents:[SEEDREAM_DRIVE_ROOT_FOLDER_ID],appProperties:{davis_design_task_id:name}}),signal:AbortSignal.timeout(20000)});const folder=await readJsonSafe(created);if(!created.ok||!folder?.id)throw new Error(`GOOGLE_DRIVE_FOLDER_CREATE_FAILED:${created.status}`);return folder;}
+async function archiveProviderImage(accessToken:string,providerUrl:string,folderId:string,taskId:string,pageIndex:number){const name=outputFileName(taskId,pageIndex);const init=await fetch(`${DRIVE_UPLOAD_API}?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,webViewLink,webContentLink,thumbnailLink,parents`,{method:"POST",headers:{Authorization:`Bearer ${accessToken}`,"content-type":"application/json; charset=UTF-8","X-Upload-Content-Type":"image/jpeg"},body:JSON.stringify({name,mimeType:"image/jpeg",parents:[folderId],appProperties:{davis_design_task_id:safeTaskId(taskId),page_index:String(Math.max(1,Number(pageIndex)||1)),provider:"seedream-4.0"}}),signal:AbortSignal.timeout(20000)});if(!init.ok)throw new Error(`GOOGLE_DRIVE_UPLOAD_INIT_FAILED:${init.status}`);const uploadUrl=init.headers.get("location");if(!uploadUrl)throw new Error("GOOGLE_DRIVE_RESUMABLE_LOCATION_MISSING");const source=await fetch(providerUrl,{redirect:"follow",signal:AbortSignal.timeout(60000)});if(!source.ok||!source.body)throw new Error(`SEEDREAM_IMAGE_DOWNLOAD_FAILED:${source.status}`);const headers:Record<string,string>={"Content-Type":source.headers.get("content-type")||"image/jpeg"};const contentLength=source.headers.get("content-length");if(contentLength)headers["Content-Length"]=contentLength;const uploaded=await fetch(uploadUrl,{method:"PUT",headers,body:source.body,signal:AbortSignal.timeout(120000)});const file=await readJsonSafe(uploaded);if(!uploaded.ok||!file?.id)throw new Error(`GOOGLE_DRIVE_UPLOAD_FAILED:${uploaded.status}`);return file;}
+function providerErrorMessage(payload:any){const code=String(payload?.error?.code||payload?.code||"UNKNOWN");const message=String(payload?.error?.message||payload?.message||payload?.error?.msg||"").replace(/\s+/g," ").slice(0,500);const param=String(payload?.error?.param||payload?.param||"").slice(0,120);const requestId=String(payload?.request_id||payload?.requestId||payload?.error?.request_id||"").slice(0,120);return{code,message,param,requestId};}
 
-function env(name: string) {
-  return String(Deno.env.get(name) || "").trim();
-}
-
-function normalizeDimensions(width: unknown, height: unknown) {
-  const w = Number(width);
-  const h = Number(height);
-  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 512 || h < 512 || w > 4096 || h > 4096) {
-    throw new Error("SEEDREAM_TARGET_SIZE_INVALID");
-  }
-  return { width: w, height: h, size: `${w}x${h}` };
-}
-
-function safeTaskId(value: unknown) {
-  return String(value || "task").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 100) || "task";
-}
-
-function outputFileName(taskId: string, pageIndex: number) {
-  const page = String(Math.max(1, Number(pageIndex) || 1)).padStart(2, "0");
-  return `${safeTaskId(taskId)}_Page${page}_Seedream4_Demo.jpg`;
-}
-
-function bytesFromBase64(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function parseImageInput(value: unknown) {
-  const text = String(value || "").trim();
-  if (!text) return null;
-  if (/^https?:\/\//i.test(text)) return { kind: "url" as const, url: text };
-  const match = text.match(/^data:(image\/(?:jpeg|jpg|png));base64,(.+)$/s);
-  if (!match) throw new Error("SEEDREAM_INPUT_IMAGE_FORMAT_INVALID");
-  const contentType = match[1].toLowerCase().replace("image/jpg", "image/jpeg");
-  const bytes = bytesFromBase64(match[2]);
-  if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new Error("SEEDREAM_INPUT_IMAGE_SIZE_INVALID");
-  return { kind: "bytes" as const, bytes, contentType, extension: contentType === "image/png" ? "png" : "jpg" };
-}
-
-async function materializeImageInputs(admin: any, taskId: string, values: unknown[]) {
-  const urls: string[] = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const parsed = parseImageInput(values[index]);
-    if (!parsed) continue;
-    if (parsed.kind === "url") {
-      urls.push(parsed.url);
-      continue;
-    }
-    const path = `uat-seedream-inputs/${safeTaskId(taskId)}/input-${String(index + 1).padStart(2, "0")}.${parsed.extension}`;
-    const uploaded = await admin.storage.from(INPUT_BUCKET).upload(path, parsed.bytes, {
-      contentType: parsed.contentType,
-      upsert: true,
-      cacheControl: "300",
-    });
-    if (uploaded.error) throw new Error(`SEEDREAM_INPUT_UPLOAD_FAILED:${uploaded.error.message}`);
-    const signed = await admin.storage.from(INPUT_BUCKET).createSignedUrl(path, 900);
-    if (signed.error || !signed.data?.signedUrl) throw new Error(`SEEDREAM_INPUT_SIGN_FAILED:${signed.error?.message || "missing_url"}`);
-    urls.push(String(signed.data.signedUrl));
-  }
-  return urls.slice(0, 10);
-}
-
-async function validateUatJwt(jwt: string) {
-  if (!jwt) throw new Error("UAT_JWT_REQUIRED");
-  const response = await fetch(`${UAT_URL}/auth/v1/user`, {
-    headers: { apikey: UAT_PUBLISHABLE_KEY, authorization: `Bearer ${jwt}` },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new Error("UAT_JWT_INVALID");
-  const user = await response.json();
-  const email = String(user?.email || "").toLowerCase();
-  if (!ALLOWED_EMAILS.has(email)) throw new Error("UAT_CALLER_FORBIDDEN");
-  return { id: String(user?.id || ""), email };
-}
-
-async function googleAccessToken(admin: any) {
-  const clientId = env("GOOGLE_CLIENT_ID");
-  const clientSecret = env("GOOGLE_CLIENT_SECRET");
-  const { data: refreshToken, error } = await admin.rpc("get_seedance_google_refresh_token");
-  if (error) throw new Error(`GOOGLE_REFRESH_TOKEN_READ_FAILED:${error.message}`);
-  if (!clientId || !clientSecret || !String(refreshToken || "").trim()) throw new Error("GOOGLE_OAUTH_SECRETS_MISSING");
-  const response = await fetch(DRIVE_TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: String(refreshToken),
-      grant_type: "refresh_token",
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const payload = await readJsonSafe(response);
-  if (!response.ok || !payload?.access_token) throw new Error(`GOOGLE_ACCESS_TOKEN_FAILED:${response.status}`);
-  return String(payload.access_token);
-}
-
-function escapeDriveQuery(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-async function ensureTaskFolder(accessToken: string, taskId: string) {
-  const name = safeTaskId(taskId);
-  const q = `'${SEEDREAM_DRIVE_ROOT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapeDriveQuery(name)}' and trashed=false`;
-  const search = await fetch(`${DRIVE_API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,webViewLink)&pageSize=10`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-  const searched = await readJsonSafe(search);
-  if (!search.ok) throw new Error(`GOOGLE_DRIVE_FOLDER_SEARCH_FAILED:${search.status}`);
-  const existing = Array.isArray(searched?.files) ? searched.files[0] : null;
-  if (existing?.id) return existing;
-  const created = await fetch(`${DRIVE_API}?fields=id,name,webViewLink,parents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [SEEDREAM_DRIVE_ROOT_FOLDER_ID],
-      appProperties: { davis_design_task_id: name },
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const folder = await readJsonSafe(created);
-  if (!created.ok || !folder?.id) throw new Error(`GOOGLE_DRIVE_FOLDER_CREATE_FAILED:${created.status}`);
-  return folder;
-}
-
-async function archiveProviderImage(accessToken: string, providerUrl: string, folderId: string, taskId: string, pageIndex: number) {
-  const name = outputFileName(taskId, pageIndex);
-  const init = await fetch(`${DRIVE_UPLOAD_API}?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,webViewLink,webContentLink,thumbnailLink,parents`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json; charset=UTF-8",
-      "X-Upload-Content-Type": "image/jpeg",
-    },
-    body: JSON.stringify({
-      name,
-      mimeType: "image/jpeg",
-      parents: [folderId],
-      appProperties: {
-        davis_design_task_id: safeTaskId(taskId),
-        page_index: String(Math.max(1, Number(pageIndex) || 1)),
-        provider: "seedream-4.0",
-      },
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!init.ok) throw new Error(`GOOGLE_DRIVE_UPLOAD_INIT_FAILED:${init.status}`);
-  const uploadUrl = init.headers.get("location");
-  if (!uploadUrl) throw new Error("GOOGLE_DRIVE_RESUMABLE_LOCATION_MISSING");
-
-  const source = await fetch(providerUrl, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
-  if (!source.ok || !source.body) throw new Error(`SEEDREAM_IMAGE_DOWNLOAD_FAILED:${source.status}`);
-  const headers: Record<string, string> = { "Content-Type": source.headers.get("content-type") || "image/jpeg" };
-  const contentLength = source.headers.get("content-length");
-  if (contentLength) headers["Content-Length"] = contentLength;
-  const uploaded = await fetch(uploadUrl, { method: "PUT", headers, body: source.body, signal: AbortSignal.timeout(120_000) });
-  const file = await readJsonSafe(uploaded);
-  if (!uploaded.ok || !file?.id) throw new Error(`GOOGLE_DRIVE_UPLOAD_FAILED:${uploaded.status}`);
-  return file;
-}
-
-function providerErrorMessage(payload: any) {
-  const code = String(payload?.error?.code || payload?.code || "UNKNOWN");
-  const message = String(payload?.error?.message || payload?.message || payload?.error?.msg || "").replace(/\s+/g, " ").slice(0, 500);
-  const param = String(payload?.error?.param || payload?.param || "").slice(0, 120);
-  const requestId = String(payload?.request_id || payload?.requestId || payload?.error?.request_id || "").slice(0, 120);
-  return { code, message, param, requestId };
-}
-
-Deno.serve(async (request: Request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (request.method !== "POST") return out({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  try {
-    const jwt = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    const caller = await validateUatJwt(jwt);
-    const body = await request.json();
-    const prompt = String(body?.prompt || "").trim();
-    if (!prompt) throw new Error("SEEDREAM_PROMPT_REQUIRED");
-    const targetDims = normalizeDimensions(body?.width, body?.height);
-    const taskId = safeTaskId(body?.task_id);
-    const pageIndex = Math.max(1, Number(body?.page_index) || 1);
-    const rawImages = (Array.isArray(body?.images) ? body.images : []).filter(Boolean).slice(0, 10);
-
-    const supabaseUrl = env("SUPABASE_URL");
-    const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) throw new Error("PROXY_SUPABASE_ENV_MISSING");
-    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const imageUrls = await materializeImageInputs(admin, taskId, rawImages);
-
-    const arkKey = env("ARK_API_KEY");
-    if (!arkKey) throw new Error("ARK_API_KEY_MISSING");
-    const seedreamBody: Record<string, unknown> = {
-      model: SEEDREAM_MODEL,
-      prompt: `3:4竖版企业宣传海报。${prompt}`,
-      size: SEEDREAM_PROVIDER_SIZE,
-      sequential_image_generation: "disabled",
-      response_format: "url",
-      stream: false,
-      watermark: false,
-    };
-    if (imageUrls.length) seedreamBody.image = imageUrls;
-
-    console.log(JSON.stringify({
-      event: "uat_seedream_request",
-      caller_email: caller.email,
-      task_id: taskId,
-      page_index: pageIndex,
-      model: SEEDREAM_MODEL,
-      target_size: targetDims.size,
-      provider_size: SEEDREAM_PROVIDER_SIZE,
-      input_images: imageUrls.length,
-      prompt_chars: prompt.length,
-    }));
-
-    const response = await fetch(SEEDREAM_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${arkKey}`, "content-type": "application/json" },
-      body: JSON.stringify(seedreamBody),
-      signal: AbortSignal.timeout(180_000),
-    });
-    const payload = await readJsonSafe(response);
-    if (!response.ok) {
-      const detail = providerErrorMessage(payload);
-      console.error(JSON.stringify({
-        event: "uat_seedream_provider_error",
-        status: response.status,
-        ...detail,
-        target_size: targetDims.size,
-        provider_size: SEEDREAM_PROVIDER_SIZE,
-        input_images: imageUrls.length,
-        prompt_chars: prompt.length,
-      }));
-      const detailText = [detail.code, detail.param ? `param=${detail.param}` : "", detail.message ? `msg=${detail.message}` : "", detail.requestId ? `request_id=${detail.requestId}` : ""].filter(Boolean).join(":");
-      throw new Error(`SEEDREAM_HTTP_${response.status}:${detailText}`);
-    }
-
-    const item = Array.isArray(payload?.data) ? payload.data[0] : null;
-    const providerUrl = String(item?.url || "").trim();
-    const actualSize = String(item?.size || "").trim();
-    if (!providerUrl) throw new Error("SEEDREAM_OUTPUT_MISSING");
-    if (!actualSize) throw new Error("SEEDREAM_OUTPUT_SIZE_MISSING");
-
-    const accessToken = await googleAccessToken(admin);
-    const folder = await ensureTaskFolder(accessToken, taskId);
-    const file = await archiveProviderImage(accessToken, providerUrl, String(folder.id), taskId, pageIndex);
-    const driveUrl = String(file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`);
-    const thumbnailUrl = String(file.thumbnailLink || `https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`);
-
-    console.log(JSON.stringify({
-      event: "uat_seedream_demo_archived",
-      caller_email: caller.email,
-      task_id: taskId,
-      page_index: pageIndex,
-      model: payload?.model || SEEDREAM_MODEL,
-      target_size: targetDims.size,
-      provider_size: SEEDREAM_PROVIDER_SIZE,
-      actual_size: actualSize,
-      input_images: imageUrls.length,
-      drive_file_id: file.id,
-    }));
-
-    return out({
-      ok: true,
-      provider: "seedream",
-      model: payload?.model || SEEDREAM_MODEL,
-      image_url: providerUrl,
-      target_size: targetDims.size,
-      requested_size: targetDims.size,
-      provider_requested_size: SEEDREAM_PROVIDER_SIZE,
-      actual_size: actualSize,
-      dimension_match: true,
-      input_image_count: imageUrls.length,
-      usage: payload?.usage || {},
-      drive_file_id: file.id,
-      drive_url: driveUrl,
-      drive_thumbnail_url: thumbnailUrl,
-      drive_folder_id: folder.id,
-      drive_folder_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
-      drive_file_name: file.name || outputFileName(taskId, pageIndex),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "SEEDREAM_PROXY_FAILED";
-    const status = /JWT|FORBIDDEN/.test(message) ? 403 : /MISSING|INVALID|REQUIRED|FORMAT/.test(message) ? 400 : 502;
-    console.error(JSON.stringify({ event: "uat_seedream_proxy_failed", error: message }));
-    return out({ ok: false, error: message }, status);
-  }
-});
+Deno.serve(async(request:Request)=>{if(request.method==="OPTIONS")return new Response("ok",{headers:CORS});if(request.method!=="POST")return out({ok:false,error:"METHOD_NOT_ALLOWED"},405);try{const jwt=(request.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");const caller=await validateUatJwt(jwt);const body=await request.json();const rawPrompt=String(body?.prompt||"").trim();if(!rawPrompt)throw new Error("SEEDREAM_PROMPT_REQUIRED");const prompt=compactSeedreamPrompt(rawPrompt);const targetDims=normalizeDimensions(body?.width,body?.height);const taskId=safeTaskId(body?.task_id);const pageIndex=Math.max(1,Number(body?.page_index)||1);const rawImages=(Array.isArray(body?.images)?body.images:[]).filter(Boolean).slice(0,10);const supabaseUrl=env("SUPABASE_URL"),serviceKey=env("SUPABASE_SERVICE_ROLE_KEY");if(!supabaseUrl||!serviceKey)throw new Error("PROXY_SUPABASE_ENV_MISSING");const admin=createClient(supabaseUrl,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});const imageUrls=await materializeImageInputs(admin,taskId,rawImages);const arkKey=env("ARK_API_KEY");if(!arkKey)throw new Error("ARK_API_KEY_MISSING");const seedreamBody:Record<string,unknown>={model:SEEDREAM_MODEL,prompt,size:SEEDREAM_PROVIDER_SIZE,sequential_image_generation:"disabled",response_format:"url",stream:false,watermark:false};if(imageUrls.length)seedreamBody.image=imageUrls;console.log(JSON.stringify({event:"uat_seedream_request",caller_email:caller.email,task_id:taskId,page_index:pageIndex,model:SEEDREAM_MODEL,target_size:targetDims.size,provider_size:SEEDREAM_PROVIDER_SIZE,input_images:imageUrls.length,raw_prompt_chars:rawPrompt.length,prompt_chars:prompt.length}));const response=await fetch(SEEDREAM_ENDPOINT,{method:"POST",headers:{Authorization:`Bearer ${arkKey}`,"content-type":"application/json"},body:JSON.stringify(seedreamBody),signal:AbortSignal.timeout(180000)});const payload=await readJsonSafe(response);if(!response.ok){const detail=providerErrorMessage(payload);console.error(JSON.stringify({event:"uat_seedream_provider_error",status:response.status,...detail,target_size:targetDims.size,provider_size:SEEDREAM_PROVIDER_SIZE,input_images:imageUrls.length,raw_prompt_chars:rawPrompt.length,prompt_chars:prompt.length}));const detailText=[detail.code,detail.param?`param=${detail.param}`:"",detail.message?`msg=${detail.message}`:"",detail.requestId?`request_id=${detail.requestId}`:""].filter(Boolean).join(":");throw new Error(`SEEDREAM_HTTP_${response.status}:${detailText}`);}const item=Array.isArray(payload?.data)?payload.data[0]:null;const providerUrl=String(item?.url||"").trim();const actualSize=String(item?.size||"").trim();if(!providerUrl)throw new Error("SEEDREAM_OUTPUT_MISSING");if(!actualSize)throw new Error("SEEDREAM_OUTPUT_SIZE_MISSING");const accessToken=await googleAccessToken(admin);const folder=await ensureTaskFolder(accessToken,taskId);const file=await archiveProviderImage(accessToken,providerUrl,String(folder.id),taskId,pageIndex);const driveUrl=String(file.webViewLink||`https://drive.google.com/file/d/${file.id}/view`);const thumbnailUrl=String(file.thumbnailLink||`https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`);console.log(JSON.stringify({event:"uat_seedream_demo_archived",caller_email:caller.email,task_id:taskId,page_index:pageIndex,model:payload?.model||SEEDREAM_MODEL,target_size:targetDims.size,provider_size:SEEDREAM_PROVIDER_SIZE,actual_size:actualSize,input_images:imageUrls.length,drive_file_id:file.id}));return out({ok:true,provider:"seedream",model:payload?.model||SEEDREAM_MODEL,image_url:providerUrl,target_size:targetDims.size,requested_size:targetDims.size,provider_requested_size:SEEDREAM_PROVIDER_SIZE,actual_size:actualSize,dimension_match:true,input_image_count:imageUrls.length,usage:payload?.usage||{},drive_file_id:file.id,drive_url:driveUrl,drive_thumbnail_url:thumbnailUrl,drive_folder_id:folder.id,drive_folder_url:folder.webViewLink||`https://drive.google.com/drive/folders/${folder.id}`,drive_file_name:file.name||outputFileName(taskId,pageIndex)});}catch(error){const message=error instanceof Error?error.message:"SEEDREAM_PROXY_FAILED";const status=/JWT|FORBIDDEN/.test(message)?403:/MISSING|INVALID|REQUIRED|FORMAT/.test(message)?400:502;console.error(JSON.stringify({event:"uat_seedream_proxy_failed",error:message}));return out({ok:false,error:message},status);}});
