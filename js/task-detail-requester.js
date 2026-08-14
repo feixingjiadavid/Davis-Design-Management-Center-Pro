@@ -81,7 +81,7 @@ async function renderAiRequirementPanel() {
         const demo = [...state.generations].reverse().find((item) => item.kind === 'demo');
         const final = [...state.generations].reverse().find((item) => item.kind === 'final');
         const messagesHtml = (state.messages || []).map((message) => window.aiClarificationChat.renderMessageBubble(message, escapeAiHtml)).join('');
-        const questionsHtml = openQuestions.map((question, index) => `<label class="block bg-amber-500/5 border border-amber-500/20 rounded-xl p-3"><span class="text-amber-200 text-sm">${index + 1}. ${escapeAiHtml(question.question)}</span><textarea data-ai-question="${question.id}" class="mt-3 w-full min-h-[76px] rounded-xl bg-black/30 border border-white/10 p-3 text-sm text-white outline-none focus:border-amber-400" placeholder="请输入明确答案；不确定可填写“交给AI决定”"></textarea></label>`).join('');
+        const questionsHtml = openQuestions.map((question, index) => window.aiClarificationChat.renderQuestionControl(question, index, escapeAiHtml)).join('');
         let controls = '';
         if (analysis?.status === 'understanding_ready') controls = `<button onclick="window.confirmAiUnderstanding('${analysis.id}')" class="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">信息已补齐，生成 Demo</button>`;
         if (demo?.status === 'ready') controls += `<button onclick="window.confirmAiDemo('${demo.id}')" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">确认 Demo，生成 Seedream 4.0 成品</button>`;
