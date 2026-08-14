@@ -2,6 +2,7 @@ import { callDeepSeekRequirementModel } from "./deepseek-client.ts";
 import { buildRequirementPrompt, REQUIREMENT_PROMPT_VERSION } from "./requirement-prompt.ts";
 import type { RequirementBrief } from "./requirement-schema.ts";
 import { classifyQuestion, selectBoundedQuestions } from "./clarification-policy.ts";
+import { analyzeVisualReferenceSet } from "./qwen-vision-client.ts";
 
 export function decideAnalysisStatus(brief: RequirementBrief) {
   return brief.missing_information.length > 0 || brief.conflicts.length > 0 || brief.clarification_questions.length > 0
@@ -87,6 +88,7 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
       },
     };
   });
+
   const templates = (await admin.from("design_templates")
     .select("id,template_family,template_type,name,canvas_width,canvas_height,rules,status")
     .in("status", ["testing", "approved"])).data || [];
@@ -100,20 +102,30 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     .eq("task_id", task.id)
     .order("created_at", { ascending: true })).data || [];
   const visualReferences = (await admin.from("uat_visual_references")
-    .select("file_name,note,is_primary,sort_order")
+    .select("id,file_name,note,is_primary,sort_order,updated_at")
     .eq("task_id", task.id)
     .order("sort_order", { ascending: true })).data || [];
+
+  let visualReferenceAnalysis: any = null;
+  if (visualReferences.length > 0) {
+    visualReferenceAnalysis = await analyzeVisualReferenceSet(admin, task.id, userJwt);
+    if (!visualReferenceAnalysis?.analysis) throw new Error("VISUAL_REFERENCE_ANALYSIS_REQUIRED");
+  }
+
   const prompt = buildRequirementPrompt({
     ...task,
     answered_clarifications: answeredClarifications,
     clarification_chat: chatMessages,
     visual_references: visualReferences.map((item: any, index: number) => ({
-      index,
+      index: index + 1,
+      id: item.id,
       file_name: item.file_name,
       note: item.note,
       is_primary: item.is_primary,
     })),
+    visual_reference_analysis: visualReferenceAnalysis?.analysis || null,
   }, sources, templates);
+
   const model = Deno.env.get("DEEPSEEK_REQUIREMENT_MODEL") || "deepseek-v4-flash";
   const result = await callDeepSeekRequirementModel(prompt, {
     apiKey: Deno.env.get("DEEPSEEK_API_KEY") || "",
@@ -121,17 +133,24 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     proxyUrl: "https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-deepseek-proxy",
     userJwt,
   });
+
+  const enrichedBrief = {
+    ...result.brief,
+    visual_reference_analysis: visualReferenceAnalysis?.analysis || null,
+    visual_reference_model: visualReferenceAnalysis?.model || null,
+  } as RequirementBrief & Record<string, unknown>;
+
   const current = (await admin.from("uat_requirement_analyses").select("version").eq("task_id", task.id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
   const version = (current?.version || 0) + 1;
   const clarificationRound = ((await admin.from("uat_requirement_analyses").select("id", { count: "exact", head: true }).eq("task_id", task.id).eq("status", "clarification_required")).count || 0) + 1;
-  const boundedQuestions = selectBoundedQuestions(result.brief.clarification_questions, clarificationRound);
-  if (result.brief.clarification_questions.length > 0 && boundedQuestions.length === 0) {
-    result.brief.clarification_questions = [];
-    result.brief.missing_information = result.brief.missing_information.filter((item: string) => classifyQuestion(item) === "hard");
+  const boundedQuestions = selectBoundedQuestions(enrichedBrief.clarification_questions, clarificationRound);
+  if (enrichedBrief.clarification_questions.length > 0 && boundedQuestions.length === 0) {
+    enrichedBrief.clarification_questions = [];
+    enrichedBrief.missing_information = enrichedBrief.missing_information.filter((item: string) => classifyQuestion(item) === "hard");
   } else {
-    result.brief.clarification_questions = boundedQuestions;
+    enrichedBrief.clarification_questions = boundedQuestions;
   }
-  const boundedStatus = decideBoundedAnalysisStatus(result.brief, clarificationRound);
+  const boundedStatus = decideBoundedAnalysisStatus(enrichedBrief, clarificationRound);
   const inserted = await admin.from("uat_requirement_analyses").insert({
     task_id: task.id,
     snapshot_ids: snapshotIds,
@@ -139,20 +158,26 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
     status: boundedStatus,
     model,
     prompt_version: REQUIREMENT_PROMPT_VERSION,
-    brief: result.brief,
-    confidence: result.brief.confidence,
-    usage: result.usage,
+    brief: enrichedBrief,
+    confidence: enrichedBrief.confidence,
+    usage: {
+      ...(result.usage || {}),
+      visual_model: visualReferenceAnalysis?.model || null,
+      visual_reference_count: visualReferences.length,
+      visual_analysis_cached: visualReferenceAnalysis?.cached ?? null,
+    },
   }).select("*").single();
   if (inserted.error) throw inserted.error;
+
   await admin.from("uat_clarifications").update({ status: "superseded", closed_reason: "new_analysis_version" }).eq("task_id", task.id).eq("status", "open").neq("analysis_id", inserted.data.id);
-  if (result.brief.clarification_questions.length > 0) {
-    await admin.from("uat_clarifications").insert(result.brief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open", round: clarificationRound, question_type: classifyQuestion(question) })));
+  if (enrichedBrief.clarification_questions.length > 0) {
+    await admin.from("uat_clarifications").insert(enrichedBrief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open", round: clarificationRound, question_type: classifyQuestion(question) })));
   }
   await admin.from("ai_design_jobs").upsert({
     task_id: task.id,
     status: boundedStatus === "clarification_required" ? "needs_input" : "ready_for_generation",
     request_snapshot: task,
-    analysis: { requirement_analysis_id: inserted.data.id, version, brief: result.brief },
+    analysis: { requirement_analysis_id: inserted.data.id, version, brief: enrichedBrief },
     attempt_count: 1,
     updated_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
