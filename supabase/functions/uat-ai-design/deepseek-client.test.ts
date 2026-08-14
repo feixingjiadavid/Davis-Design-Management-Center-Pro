@@ -7,6 +7,10 @@ const validBrief = {
   success_criteria: ["完整呈现规则"],
   audience: ["内部员工"],
   deliverables: [{ type: "平面视觉", quantity: 2 }],
+  pages: [
+    { index: 1, title: "封面", copy: ["2026 TIG 合作社"] },
+    { index: 2, title: "规则", copy: ["完整呈现规则"] },
+  ],
   channels: ["小蓝书"],
   dimensions: ["1242×1660"],
   copy: ["2026 TIG 合作社"],
@@ -42,6 +46,24 @@ test("sends a DeepSeek JSON Output request and validates the brief", async () =>
   assert.equal(body.stream, false);
   assert.equal(result.brief.goal, validBrief.goal);
   assert.equal(result.usage.total_tokens, 123);
+});
+
+test("normalizes structured required assets instead of failing the whole analysis", async () => {
+  const structured = {
+    ...validBrief,
+    required_assets: [
+      { asset_role: "TIG IP 虎", file_name: "IP.png", status: "已提供", note: "保持形象特征一致" },
+      { role: "公司彩色Logo", filename: "WeBank logo 彩色英文Logo.png", provided: true, usage: "浅色底使用" },
+    ],
+  };
+  const result = await callDeepSeekRequirementModel("分析需求", {
+    apiKey: "test-secret",
+    model: "deepseek-v4-flash",
+  }, async () => Response.json({ choices: [{ message: { content: JSON.stringify(structured) }, finish_reason: "stop" }] }));
+  assert.equal(result.brief.required_assets.length, 2);
+  assert.match(result.brief.required_assets[0], /TIG IP 虎/);
+  assert.match(result.brief.required_assets[0], /IP\.png/);
+  assert.match(result.brief.required_assets[1], /公司彩色Logo/);
 });
 
 test("rejects missing DeepSeek configuration", async () => {
