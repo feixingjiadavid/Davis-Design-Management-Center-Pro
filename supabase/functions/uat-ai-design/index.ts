@@ -68,7 +68,7 @@ Deno.serve(async (request) => {
         await confirmUnderstanding(admin, task_id, analysis.id, auth.user.id);
         await admin.from("test_tasks").update({ status: "generating_demo", summary_desc: "AI 已理解需求，正在生成 Cloudflare Demo" }).eq("id", task_id);
         await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: "信息已经够了，我现在开始生成第一版设计图。", metadata: { status: "generating_demo", version: analysis.version } });
-        const generation = await generateDemo(admin, task_id, analysis.id, analysis.id);
+        const generation = await generateDemo(admin, task_id, analysis.id, crypto.randomUUID());
         await admin.from("test_tasks").update({ status: "demo_review", summary_desc: "Cloudflare Demo 已生成，等待需求方查看" }).eq("id", task_id);
         await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: "第一版 Demo 已生成，请查看设计效果。", metadata: { status: "demo_review", generation_id: generation.id } });
         return { ok: true, status: "demo_review", analysis, generation };
