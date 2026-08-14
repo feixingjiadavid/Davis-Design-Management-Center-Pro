@@ -86,3 +86,15 @@ test("marks explicit design scope as authoritative and requires one structured p
   assert.match(prompt, /pages 必须与 DESIGN_SCOPE 中的页数一一对应/);
   assert.match(prompt, /每页 copy 只能来自该页对应内容/);
 });
+
+test("distinguishes style references from required assets and blocks when a named IP asset is missing", () => {
+  const prompt = buildRequirementPrompt({
+    id: "TK-1",
+    visual_references: [{ file_name: "style.jpg", is_primary: true }],
+    design_assets: [{ file_name: "tiger.png", asset_role: "TIG IP", note: "必须使用原IP" }],
+  }, [], []);
+  assert.match(prompt, /风格参考只能学习设计语言/);
+  assert.match(prompt, /必用素材必须作为内容资产处理/);
+  assert.match(prompt, /TIG IP/);
+  assert.match(prompt, /如果需求明确要求某个IP、Logo、人物照片、主视觉或品牌元素/);
+});
