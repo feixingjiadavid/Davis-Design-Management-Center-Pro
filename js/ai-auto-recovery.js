@@ -64,7 +64,7 @@ export async function bootstrapAiAutoRecovery(supabase) {
   if (error || !tasks?.length) return;
 
   for (const task of tasks) {
-    const key = `davis-ai-auto-recovery:${task.id}:state-v46`;
+    const key = `davis-ai-auto-recovery:${task.id}:state-v48-required-assets`;
     if (sessionStorage.getItem(key)) continue;
     if (!await canRecoverTask(supabase, task)) continue;
 
