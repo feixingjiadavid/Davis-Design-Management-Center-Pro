@@ -73,8 +73,18 @@ export async function saveVisualReferences(supabase, taskId, references, { repla
     is_primary: Boolean(reference.is_primary),
     sort_order: Number.isInteger(reference.sort_order) ? reference.sort_order : index,
   }));
-  if (!rows.some(row => row.is_primary)) rows[0].is_primary = true;
-  if (rows.filter(row => row.is_primary).length > 1) rows.forEach((row, index) => { row.is_primary = index === rows.findIndex(item => item.is_primary); });
+  if (!rows.some(row => row.is_primary) && replace) rows[0].is_primary = true;
+  if (rows.filter(row => row.is_primary).length > 1) {
+    const primaryIndex = rows.findIndex(item => item.is_primary);
+    rows.forEach((row, index) => { row.is_primary = index === primaryIndex; });
+  }
+  if (rows.some(row => row.is_primary)) {
+    const { error: clearError } = await supabase.from('uat_visual_references')
+      .update({ is_primary: false, updated_at: new Date().toISOString() })
+      .eq('task_id', taskId)
+      .eq('is_primary', true);
+    if (clearError) throw clearError;
+  }
   const { data, error } = await supabase.from('uat_visual_references').insert(rows).select('*');
   if (error) throw error;
   return data || [];
