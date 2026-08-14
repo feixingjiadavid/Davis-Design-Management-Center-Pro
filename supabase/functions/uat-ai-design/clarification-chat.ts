@@ -27,7 +27,7 @@ export async function saveAiProcessingAck(admin: any, taskId: string, clientRequ
   const inserted = await admin.from("uat_clarification_messages").insert({
     task_id: taskId,
     sender_role: "ai_designer",
-    message_type: "status",
+    message_type: "summary",
     content,
     client_request_id: ackRequestId,
     metadata: { status: "processing" },
