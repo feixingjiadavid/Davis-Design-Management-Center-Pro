@@ -20,7 +20,7 @@ export async function callDeepSeekRequirementModel(
       authorization: `Bearer ${usingProxy ? config.userJwt : config.apiKey}`,
       "content-type": "application/json",
     },
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(120_000),
     body: JSON.stringify(usingProxy ? { prompt, model: config.model } : {
       model: config.model,
       temperature: 0.1,
