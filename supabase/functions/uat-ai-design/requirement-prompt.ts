@@ -1,6 +1,6 @@
 import type { NormalizedSourceDocument } from "./source-types.ts";
 
-export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v6-qwen-vision";
+export const REQUIREMENT_PROMPT_VERSION = "requirement-grounded-v7-actionable-conflicts";
 
 export function extractExplicitDesignScope(text: string): { marker: string; text: string } | null {
   const normalized = String(text || "").replace(/\r/g, "");
@@ -86,13 +86,14 @@ ${visualAnalysisText}
 1. 每条事实必须填写 source_id 和可以让人定位的 locator。
 2. 推断、审美判断和方案建议必须放入 recommendations，label 固定为“AI建议”。
 3. 缺少尺寸、完整文案、数量、关键素材、明确产出类型或截止时间时，写入 missing_information 并提出具体问题；但系统业务规格已经确定的字段不属于缺失信息，不得追问。
-4. 来源互相矛盾时写入 conflicts，不得自行选择其中一个。
+4. conflicts 只填写“仍未解决且必须由需求方裁决”的来源冲突。若系统优先级、明确设计作用域或需求方已回答的信息已经能够确定处理方式，则该冲突已解决，不得写入 conflicts；可在 risks 中留审计说明，但不能因此阻塞流程。
 5. OpenTalk 必须先判断是“预告”还是“回顾”，只能推荐同类型模板。
 6. copy 只保留实际需要出现在设计稿上的文字，不要把背景说明混进设计文案。
 7. constraints 只能记录系统硬规则、需求单硬要求或需求方明确确认的限制；AI自己的排版/风格想法一律放 recommendations。
 8. 如果明确设计作用域已经足够确定页面数量、页面标题和页面内容，不要再针对作用域外信息提出追问。
 9. deliverables.quantity 必须与 pages.length 一致；如果 DESIGN_SCOPE 有3页，则必须输出3个 pages，不能只给一个总览。
 10. 视觉建议必须与千问视觉分析一致；没有视觉分析时不得虚构参考图风格。
+11. 当 missing_information=[] 且 clarification_questions=[] 时，必须视为信息已足够，不得因为已解决的历史矛盾继续要求需求方补充。
 
 严格输出以下 JSON 对象结构，必须保留全部字段；没有内容的列表填写 []，未知截止日期填写空字符串：
 ${JSON.stringify({
@@ -112,8 +113,8 @@ ${JSON.stringify({
   facts: [{ key: "事实字段", value: "事实值", source_type: "form_fields 或 tencent_doc", source_id: "来源 ID", locator: "需求单字段名或文档定位" }],
   recommendations: [{ value: "建议内容", label: "AI建议" }],
   missing_information: ["缺失信息"],
-  conflicts: ["来源冲突"],
-  risks: ["执行风险"],
+  conflicts: ["仅尚未解决且必须由需求方裁决的来源冲突"],
+  risks: ["执行风险或已按规则解决的历史矛盾审计说明"],
   confidence: 0.8,
   clarification_questions: ["需要需求方回答的具体问题"],
   template_recommendations: [{ template_id: "仅使用可选模板中真实存在的 ID", reason: "匹配原因" }],
