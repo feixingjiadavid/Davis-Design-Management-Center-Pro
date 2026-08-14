@@ -23,12 +23,17 @@ Deno.serve(async (request) => {
   const jwt = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   const { data: auth } = await admin.auth.getUser(jwt);
   if (!auth.user) return out({ ok: false, error: "Authenticated UAT account required" }, 401);
+
   const body = await request.json();
   const { task_id, action = "analyze" } = body;
   const actorEmail = String(auth.user.email || "").toLowerCase();
   const isAiDesigner = actorEmail === "davis.design.ai@webank.com";
-  const isRequesterAutoTrigger = actorEmail === "uat.requester@webank.com" && ["auto_analyze", "answer_clarifications", "delegate_to_ai", "analyze", "reanalyze", "read_sources", "answer_clarification", "confirm_understanding", "generate_demo", "confirm_demo", "generate_final"].includes(action);
+  const isRequesterAutoTrigger = actorEmail === "uat.requester@webank.com" && [
+    "auto_analyze", "answer_clarifications", "delegate_to_ai", "analyze", "reanalyze", "read_sources",
+    "answer_clarification", "confirm_understanding", "generate_demo", "confirm_demo", "generate_final",
+  ].includes(action);
   if (!isAiDesigner && !isRequesterAutoTrigger) return out({ ok: false, error: "UAT AI account or requester auto-trigger required" }, 403);
+
   const { data: task } = await admin.from("test_tasks").select("*").eq("id", task_id).single();
   if (!task || task.assignee !== "davis.design.ai") return out({ ok: false, error: "Task is not assigned to UAT AI" }, 400);
 
@@ -37,7 +42,7 @@ Deno.serve(async (request) => {
   const pauseForVisualReference = async () => {
     await admin.from("test_tasks").update({
       status: "waiting_visual_reference",
-      summary_desc: "AI 已收到需求，等待需求方上传至少1张视觉参考图",
+      summary_desc: "AI 已收到需求，等待需求方上传至少1张视觉风格参考图",
     }).eq("id", task_id);
     return out({ ok: true, status: "waiting_visual_reference", reason: "VISUAL_REFERENCE_REQUIRED" }, 202);
   };
@@ -53,36 +58,47 @@ Deno.serve(async (request) => {
   }
 
   let history: Array<Record<string, unknown>> = [];
-  try { history = JSON.parse(task.history_json || "[]"); } catch { /* Preserve empty history. */ }
+  try { history = JSON.parse(task.history_json || "[]"); } catch { /* keep empty */ }
 
   const runDemoGeneration = async (analysisId: string, source: string) => {
-    await admin.from("test_tasks").update({ status: "generating_demo", summary_desc: "AI 设计师正在按页生成 Cloudflare Demo" }).eq("id", task_id);
+    await admin.from("test_tasks").update({
+      status: "generating_demo",
+      summary_desc: "AI 设计师正在按页生成 Seedream 4.0 Demo",
+    }).eq("id", task_id);
     await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "demo_generation_started", task_id, details: { analysis_id: analysisId, source } });
     try {
-      const generations = await generateDemoSet(admin, task_id, analysisId);
-      await admin.from("test_tasks").update({ status: "demo_review", summary_desc: `Cloudflare Demo 已生成 ${generations.length} 张，等待需求方确认` }).eq("id", task_id);
+      const generations = await generateDemoSet(admin, task_id, analysisId, jwt);
+      await admin.from("test_tasks").update({
+        status: "demo_review",
+        summary_desc: `Seedream 4.0 Demo 已生成 ${generations.length} 张，等待需求方确认`,
+      }).eq("id", task_id);
       await admin.from("uat_audit_log").insert({
         actor_id: auth.user.id,
         actor_email: auth.user.email,
         action: "demo_generated",
         task_id,
-        details: { generation_ids: generations.map((item: any) => item.id), models: [...new Set(generations.map((item: any) => item.model))], count: generations.length, source },
+        details: {
+          generation_ids: generations.map((item: any) => item.id),
+          models: [...new Set(generations.map((item: any) => item.model))],
+          count: generations.length,
+          source,
+        },
       });
       await admin.from("uat_clarification_messages").insert({
         task_id,
         analysis_id: analysisId,
         sender_role: "ai_designer",
         message_type: "summary",
-        content: `${generations.length} 张 Demo 已全部生成，请查看整体设计方向。`,
+        content: `${generations.length} 张 Seedream Demo 已全部生成，请查看完整设计方向。`,
         metadata: { status: "demo_review", generation_ids: generations.map((item: any) => item.id) },
       });
       return generations;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Demo generation failed";
       if (message.includes("VISUAL_REFERENCE_REQUIRED")) {
-        await admin.from("test_tasks").update({ status: "waiting_visual_reference", summary_desc: "缺少视觉参考图，AI 已暂停 Demo 生成" }).eq("id", task_id);
+        await admin.from("test_tasks").update({ status: "waiting_visual_reference", summary_desc: "缺少视觉风格参考图，AI 已暂停 Demo 生成" }).eq("id", task_id);
       } else {
-        await admin.from("test_tasks").update({ status: "demo_failed", summary_desc: `Demo 生成失败：${message.slice(0, 160)}` }).eq("id", task_id);
+        await admin.from("test_tasks").update({ status: "demo_failed", summary_desc: `Seedream Demo 生成失败：${message.slice(0, 160)}` }).eq("id", task_id);
       }
       await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "demo_generation_failed", task_id, details: { analysis_id: analysisId, error: message, source } });
       throw error;
@@ -92,7 +108,7 @@ Deno.serve(async (request) => {
   const executeAnalysis = async () => {
     try {
       if (requiresVisualReference && await getVisualReferenceCount() === 0) {
-        await admin.from("test_tasks").update({ status: "waiting_visual_reference", summary_desc: "AI 等待视觉参考图后继续理解与出图" }).eq("id", task_id);
+        await admin.from("test_tasks").update({ status: "waiting_visual_reference", summary_desc: "AI 等待视觉风格参考图后继续理解与出图" }).eq("id", task_id);
         return { ok: true, status: "waiting_visual_reference" };
       }
       if (shouldRefreshSourcesForAction(action)) await ingestTaskSources(admin, task, auth.user.id);
@@ -101,7 +117,7 @@ Deno.serve(async (request) => {
       history.push({ action: "ai_requirement_analysis", operator: "Davis AI设计师 (UAT)", analysis_id: analysis.id, version: analysis.version, status: analysis.status, time: new Date().toISOString() });
       await admin.from("test_tasks").update({
         status: nextStatus,
-        summary_desc: nextStatus === "needs_input" ? "AI 已自动理解需求，等待需求方补充信息" : "AI 已完成需求理解，正在自动进入 Demo 生成",
+        summary_desc: nextStatus === "needs_input" ? "AI 已自动理解需求，等待需求方补充信息" : "AI 已完成需求理解，正在自动进入 Seedream Demo 生成",
         history_json: JSON.stringify(history),
       }).eq("id", task_id);
       await admin.from("uat_audit_log").insert({ actor_id: auth.user.id, actor_email: auth.user.email, action: "ai_requirement_analysis", task_id, details: { analysis_id: analysis.id, version: analysis.version, status: analysis.status, automatic: isAutomaticAnalysisAction(action) } });
@@ -112,14 +128,21 @@ Deno.serve(async (request) => {
           analysis_id: analysis.id,
           sender_role: "ai_designer",
           message_type: "summary",
-          content: nextStatus === "needs_input" ? "我已结合你的补充重新理解需求，仍有少量会影响出图的关键信息需要确认。" : "我已理解完成，信息足够，现在自动进入 Demo 出图。",
+          content: nextStatus === "needs_input" ? "我已结合你的补充重新理解需求，仍有少量会影响出图的关键信息需要确认。" : "我已理解完成，信息足够，现在自动进入 Seedream Demo 出图。",
           metadata: { status: nextStatus, version: analysis.version },
         });
       }
 
       if (analysis.status === "understanding_ready") {
         await confirmUnderstanding(admin, task_id, analysis.id, auth.user.id);
-        await admin.from("uat_clarification_messages").insert({ task_id, analysis_id: analysis.id, sender_role: "ai_designer", message_type: "summary", content: "信息和视觉参考已经齐全，我现在自动按页生成第一版设计图。", metadata: { status: "generating_demo", version: analysis.version } });
+        await admin.from("uat_clarification_messages").insert({
+          task_id,
+          analysis_id: analysis.id,
+          sender_role: "ai_designer",
+          message_type: "summary",
+          content: "信息、视觉风格参考和必用素材已经齐全，我现在用 Seedream 4.0 按页生成第一版完整设计 Demo。",
+          metadata: { status: "generating_demo", version: analysis.version },
+        });
         try {
           const generations = await runDemoGeneration(analysis.id, "automatic_analysis");
           return { ok: true, status: "demo_review", analysis, generations };
@@ -155,7 +178,7 @@ Deno.serve(async (request) => {
 
   if (isAutomaticAnalysisAction(action)) {
     if (requiresVisualReference && await getVisualReferenceCount() === 0) return await pauseForVisualReference();
-    await admin.from("test_tasks").update({ status: "processing", summary_desc: "AI 正在自动读取资料、参考图并理解需求" }).eq("id", task_id);
+    await admin.from("test_tasks").update({ status: "processing", summary_desc: "AI 正在自动读取资料、风格参考和必用素材" }).eq("id", task_id);
     EdgeRuntime.waitUntil(executeAnalysis());
     return out({ ok: true, status: "processing" }, 202);
   }
