@@ -14,6 +14,11 @@ export type SeedreamDemoContext = {
   pageCount: number;
 };
 
+export function resolveSeedreamProviderSize(size: { width: number; height: number }) {
+  const align = (value: number) => Math.ceil(Number(value) / 32) * 32;
+  return { width: align(size.width), height: align(size.height) };
+}
+
 export async function generateSeedreamDemo(
   prompt: string,
   size: { width: number; height: number },
@@ -26,6 +31,7 @@ export async function generateSeedreamDemo(
   if (!String(prompt || "").trim()) throw new Error("SEEDREAM_PROMPT_REQUIRED");
   if (!Number.isInteger(size.width) || !Number.isInteger(size.height)) throw new Error("SEEDREAM_SIZE_INVALID");
 
+  const providerSize = resolveSeedreamProviderSize(size);
   const images = inputs
     .map((item) => String(item?.data_url || "").trim())
     .filter(Boolean)
@@ -41,8 +47,8 @@ export async function generateSeedreamDemo(
       task_id: context.taskId,
       page_index: context.pageIndex,
       page_count: context.pageCount,
-      width: size.width,
-      height: size.height,
+      width: providerSize.width,
+      height: providerSize.height,
       prompt,
       images,
     }),
@@ -61,8 +67,10 @@ export async function generateSeedreamDemo(
     provider: "seedream",
     model: String(payload.model || SEEDREAM_DEMO_MODEL),
     size: { width: size.width, height: size.height },
-    requested_size: String(payload.requested_size || `${size.width}x${size.height}`),
-    actual_size: String(payload.actual_size || `${size.width}x${size.height}`),
+    target_size: `${size.width}x${size.height}`,
+    provider_size: `${providerSize.width}x${providerSize.height}`,
+    requested_size: String(payload.requested_size || `${providerSize.width}x${providerSize.height}`),
+    actual_size: String(payload.actual_size || `${providerSize.width}x${providerSize.height}`),
     dimension_match: payload.dimension_match !== false,
     input_image_count: Number(payload.input_image_count ?? images.length),
     drive_file_id: payload.drive_file_id || null,
@@ -83,7 +91,7 @@ export async function generateSeedreamFinal(prompt: string, fetcher: typeof fetc
   const response = await fetcher(apiBase, {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ model, prompt, size: "1242x1660", response_format: "url" }),
+    body: JSON.stringify({ model, prompt, size: "1248x1664", response_format: "url" }),
     signal: AbortSignal.timeout(180_000),
   });
   if (!response.ok) throw new Error(`SEEDREAM_HTTP_${response.status}`);
