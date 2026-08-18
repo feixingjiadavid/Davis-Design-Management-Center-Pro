@@ -59,15 +59,10 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
-  // Demo v5：数据库队列状态是唯一真源；刷新/关闭页面不丢任务。
-  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-dbqueue-v5')
+  // Demo v5：数据库队列状态是唯一真源；私有 Google Drive 通过鉴权 Relay 完整缓冲后预览。
+  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-dbqueue-v5b')
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
-
-  // Drive 预览兜底：归档文件直接用 Drive 缩略图展示，不再等待跨域 blob 流。
-  import('./js/seedream-drive-preview-fallback-v1.js?v=drive-preview-fallback-v1')
-    .then(module => module.bootstrapSeedreamDrivePreviewFallback())
-    .catch(error => console.error('Seedream Drive 预览兜底加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
