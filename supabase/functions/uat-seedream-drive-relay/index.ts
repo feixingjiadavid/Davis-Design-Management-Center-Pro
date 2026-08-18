@@ -1,23 +1,20 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { isAllowedUatEmail, outputFileName, safeTaskId } from './drive-relay-core.ts';
+import { archiveRelaySignature, constantTimeEqual, isAllowedUatEmail, outputFileName, safeTaskId } from './drive-relay-core.ts';
 
 const UAT_URL = 'https://bjzfkwxrvytgphvgwltl.supabase.co';
 const UAT_PUBLISHABLE_KEY = 'sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
-// Existing Google Drive folder: Davis Design AI / Seedream 成品
 const SEEDREAM_DRIVE_ROOT_FOLDER_ID = '1vg12NJfXRXp8KBkvX8uh2RGTYmN0BPWu';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization,content-type',
+  'Access-Control-Allow-Headers': 'authorization,content-type,x-davis-relay-signature',
   'Access-Control-Allow-Methods': 'POST,OPTIONS',
   'Content-Type': 'application/json; charset=utf-8',
 };
 
-function out(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: CORS });
-}
+function out(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: CORS }); }
 function env(name: string) { return String(Deno.env.get(name) || '').trim(); }
 async function readJsonSafe(response: Response) {
   const text = await response.text().catch(() => '');
@@ -34,6 +31,16 @@ async function validateUatJwt(jwt: string) {
   const user = await response.json();
   if (!isAllowedUatEmail(user?.email)) throw new Error('UAT_CALLER_FORBIDDEN');
   return { id: String(user?.id || ''), email: String(user?.email || '') };
+}
+async function authenticateCaller(request: Request) {
+  const arkKey = env('ARK_API_KEY');
+  const suppliedSignature = String(request.headers.get('x-davis-relay-signature') || '').trim();
+  if (arkKey && suppliedSignature) {
+    const expected = await archiveRelaySignature(arkKey);
+    if (constantTimeEqual(expected, suppliedSignature)) return { id: 'server', email: 'uat-ark-gateway@internal' };
+  }
+  const jwt = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  return await validateUatJwt(jwt);
 }
 async function resolveRefreshToken(admin: any) {
   const { data, error } = await admin.rpc('get_seedance_google_refresh_token');
@@ -90,7 +97,6 @@ async function findExistingFile(accessToken: string, folderId: string, fileName:
 async function uploadImage(accessToken: string, sourceUrl: string, folderId: string, fileName: string, taskId: string, pageIndex: number) {
   const existing = await findExistingFile(accessToken, folderId, fileName);
   if (existing?.id) return { ...existing, idempotent_replay: true };
-
   const source = await fetch(sourceUrl, { redirect: 'follow', signal: AbortSignal.timeout(60_000) });
   if (!source.ok || !source.body) throw new Error(`SEEDREAM_IMAGE_DOWNLOAD_FAILED:${source.status}`);
   const contentType = source.headers.get('content-type') || 'image/jpeg';
@@ -122,8 +128,7 @@ Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (request.method !== 'POST') return out({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
   try {
-    const jwt = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-    const caller = await validateUatJwt(jwt);
+    const caller = await authenticateCaller(request);
     const supabaseUrl = env('SUPABASE_URL');
     const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
     if (!supabaseUrl || !serviceKey) throw new Error('RELAY_SUPABASE_ENV_MISSING');
@@ -148,7 +153,7 @@ Deno.serve(async (request: Request) => {
     return out({ ok: true, drive_file_id: file.id, drive_url: driveUrl, drive_thumbnail_url: thumbnailUrl, drive_folder_id: folder.id, drive_folder_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`, drive_file_name: file.name || fileName, idempotent_replay: Boolean(file.idempotent_replay) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = /JWT|FORBIDDEN/.test(message) ? 401 : /GOOGLE_/.test(message) ? 502 : 400;
+    const status = /JWT|FORBIDDEN|SIGNATURE/.test(message) ? 401 : /GOOGLE_/.test(message) ? 502 : 400;
     return out({ ok: false, error: message }, status);
   }
 });
