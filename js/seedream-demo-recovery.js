@@ -1,7 +1,7 @@
 export const DEMO_MODEL = 'doubao-seedream-4-0-250828';
 export const DEMO_PROMPT_VERSION = 'seedream-demo-design-director-v1';
 
-const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function deriveSeedreamDemoProgress(task = {}, generations = [], nowMs = Date.now()) {
@@ -18,10 +18,10 @@ export function deriveSeedreamDemoProgress(task = {}, generations = [], nowMs = 
   const currentPage = Number(generating?.page_index || failed?.page_index || Math.min(totalPages, completedPages + 1));
 
   let state = 'idle';
-  if (failed || task.status === 'demo_failed') state = 'failed';
+  if (failed) state = 'failed';
   else if (generating || task.status === 'generating_demo') state = 'generating';
   else if (completedPages >= totalPages && currentRows.length >= totalPages) state = 'ready';
-  else if (task.status === 'ready_for_demo') state = 'queued';
+  else if (task.status === 'ready_for_demo' || (task.status === 'demo_failed' && currentRows.length === 0)) state = 'queued';
 
   return {
     state,
@@ -30,7 +30,7 @@ export function deriveSeedreamDemoProgress(task = {}, generations = [], nowMs = 
     completedPages,
     currentPage,
     elapsedSeconds,
-    error: String(failed?.error_message || (state === 'failed' ? task.summary_desc || 'Demo 生成失败' : '')),
+    error: String(failed?.error_message || ''),
     canRetry: state === 'failed',
   };
 }
@@ -81,9 +81,9 @@ function renderProgress(progress, analysis) {
     return `<div id="seedream-demo-live" class="space-y-4"><div class="flex items-center justify-between gap-3"><p class="text-sm font-bold text-emerald-400">Seedream 4.0 Demo 已完成 ${progress.completedPages} / ${progress.totalPages}</p><span class="text-[11px] text-slate-500">耗时约 ${progress.elapsedSeconds}s</span></div><div class="space-y-3">${readyImages(progress)}</div></div>`;
   }
   if (progress.state === 'queued') {
-    return `<div id="seedream-demo-live" class="min-h-[190px] flex items-center justify-center"><div class="text-center"><div class="spin mx-auto"></div><p class="text-sm font-bold text-blue-200 mt-3">Seedream 4.0 Demo 等待启动</p><p class="text-xs text-slate-500 mt-1">需求理解已确认，等待进入生成。</p></div></div>`;
+    return `<div id="seedream-demo-live" class="rounded-xl border border-blue-500/20 bg-blue-950/15 p-5"><div class="flex items-start gap-3"><div class="w-8 h-8 rounded-full border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 shrink-0">✓</div><div class="min-w-0 flex-1"><p class="text-sm font-bold text-blue-200">Seedream 4.0 Demo 已就绪</p><p class="text-xs text-slate-400 mt-2">需求理解、参考图和必用素材已准备完成。点击后才会发起本次付费生成。</p><p class="text-[11px] text-slate-500 mt-2">目标尺寸：${esc(target)} · 预计 ${Math.max(1, Number(analysis?.brief?.pages?.length || 3))} 页</p><button id="seedreamDemoRetryBtn" class="btn bg-violet-600 hover:bg-violet-500 text-white mt-4">开始生成 Seedream 4.0 Demo</button></div></div></div>`;
   }
-  return `<div id="seedream-demo-live" class="h-[190px] flex items-center justify-center text-center text-slate-600">AI 完成需求理解后会自动生成 Demo</div>`;
+  return `<div id="seedream-demo-live" class="h-[190px] flex items-center justify-center text-center text-slate-600">AI 完成需求理解后会进入 Demo 准备状态</div>`;
 }
 
 async function loadState(supabase, taskId) {
@@ -140,7 +140,7 @@ export async function bootstrapSeedreamDemoRecovery(supabase) {
         }
       };
       clearInterval(pollTimer);
-      if (progress.state === 'generating' || progress.state === 'queued') pollTimer = setInterval(refresh, 1500);
+      if (progress.state === 'generating') pollTimer = setInterval(refresh, 1500);
     } catch (error) {
       console.error('Seedream Demo 进度读取失败:', error);
     }
