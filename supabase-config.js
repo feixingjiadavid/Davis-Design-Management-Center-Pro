@@ -60,7 +60,7 @@ if (typeof window !== 'undefined') {
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
   import('./js/seedream-demo-ui-copy.js?v=seedream-demo-v1')
     .catch(error => console.error('Seedream Demo 工作台文案模块加载失败:', error));
-  import('./js/seedream-demo-recovery.js?v=seedream-demo-progress-v2')
+  import('./js/seedream-demo-recovery.js?v=seedream-demo-progress-v3')
     .then(module => module.bootstrapSeedreamDemoRecovery(supabase))
     .catch(error => console.error('Seedream Demo 实时进度模块加载失败:', error));
 }
