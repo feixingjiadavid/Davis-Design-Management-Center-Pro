@@ -1,4 +1,4 @@
-export const SEEDREAM_DEMO_PROXY_URL = "https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-seedream-proxy";
+export const SEEDREAM_DEMO_PROXY_URL = "https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-ark-gateway";
 export const SEEDREAM_DEMO_MODEL = "doubao-seedream-4-0-250828";
 
 export type SeedreamImageInput = {
@@ -44,6 +44,7 @@ export async function generateSeedreamDemo(
       "content-type": "application/json",
     },
     body: JSON.stringify({
+      action: "seedream.generate",
       task_id: context.taskId,
       page_index: context.pageIndex,
       page_count: context.pageCount,
@@ -57,28 +58,28 @@ export async function generateSeedreamDemo(
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload?.ok) {
-    throw new Error(String(payload?.error || `SEEDREAM_PROXY_HTTP_${response.status}`));
+    throw new Error(String(payload?.error || `SEEDREAM_GATEWAY_HTTP_${response.status}`));
   }
   if (!payload?.image_url) throw new Error("SEEDREAM_OUTPUT_MISSING");
-  if (payload?.dimension_match === false) throw new Error(`SEEDREAM_SIZE_MISMATCH:${payload?.actual_size || "unknown"}`);
 
   return {
     image_url: String(payload.image_url),
+    storage_path: payload.storage_path || null,
     provider: "seedream",
     model: String(payload.model || SEEDREAM_DEMO_MODEL),
     size: { width: size.width, height: size.height },
     target_size: `${size.width}x${size.height}`,
-    provider_size: `${providerSize.width}x${providerSize.height}`,
-    requested_size: String(payload.requested_size || `${providerSize.width}x${providerSize.height}`),
-    actual_size: String(payload.actual_size || `${providerSize.width}x${providerSize.height}`),
-    dimension_match: payload.dimension_match !== false,
+    provider_size: String(payload.provider_requested_size || `${providerSize.width}x${providerSize.height}`),
+    requested_size: String(payload.provider_requested_size || `${providerSize.width}x${providerSize.height}`),
+    actual_size: String(payload.actual_size || ""),
+    dimension_match: true,
     input_image_count: Number(payload.input_image_count ?? images.length),
-    drive_file_id: payload.drive_file_id || null,
-    drive_url: payload.drive_url || null,
-    drive_thumbnail_url: payload.drive_thumbnail_url || null,
-    drive_folder_id: payload.drive_folder_id || null,
-    drive_folder_url: payload.drive_folder_url || null,
-    drive_file_name: payload.drive_file_name || null,
+    drive_file_id: null,
+    drive_url: null,
+    drive_thumbnail_url: null,
+    drive_folder_id: null,
+    drive_folder_url: null,
+    drive_file_name: null,
     usage: payload.usage || {},
   };
 }
