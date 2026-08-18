@@ -59,9 +59,10 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
-  import('./js/seedream-demo-guard.js?v=uat-ark-gateway-health-v2')
-    .then(module => module.bootstrapSeedreamDemoGuard(supabase))
-    .catch(error => console.error('Seedream Demo 连通性/实时轮询模块加载失败:', error));
+  // Demo 由单页顺序生成控制器接管：只更新 Demo 卡片，不再整页轮询重绘。
+  import('./js/seedream-demo-orchestrator.js?v=seedream-demo-sequential-v2')
+    .then(module => module.bootstrapSeedreamDemoOrchestrator(supabase))
+    .catch(error => console.error('Seedream Demo 顺序生成控制器加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
