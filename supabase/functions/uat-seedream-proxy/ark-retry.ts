@@ -23,21 +23,25 @@ export async function fetchArkWithRetry(
   const fetcher = options.fetcher || fetch;
   const sleepFn = options.sleepFn || ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const delaysMs = Array.isArray(options.delaysMs) && options.delaysMs.length ? options.delaysMs : [0, 4000];
-  const attemptTimeoutMs = Math.max(5_000, Number(options.attemptTimeoutMs || 55_000));
+  const attemptTimeoutMs = Math.max(30_000, Number(options.attemptTimeoutMs || 150_000));
   let lastError: unknown = null;
 
   for (let index = 0; index < delaysMs.length; index += 1) {
     if (delaysMs[index] > 0) await sleepFn(delaysMs[index]);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort("ark-image-timeout"), attemptTimeoutMs);
+    const timer = setTimeout(() => controller.abort("ark-image-attempt-timeout"), attemptTimeoutMs);
     try {
       return await fetcher(url, { ...init, signal: controller.signal });
     } catch (error) {
       lastError = error;
-      const message = error instanceof Error ? error.message : String(error);
-      const timedOut = controller.signal.aborted || /ark-image-timeout|timed out/i.test(message);
-      const retryable = timedOut || isRetryableArkNetworkError(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = controller.signal.aborted ? `ARK_IMAGE_ATTEMPT_TIMEOUT:${rawMessage}` : rawMessage;
+      // Only retry errors that prove the TCP/DNS connection itself failed.
+      // Do not automatically retry our own request timeout: the provider may
+      // already have accepted the paid generation request by that point.
+      const retryable = !controller.signal.aborted && isRetryableArkNetworkError(error);
       options.onAttemptFailure?.({ attempt: index + 1, retryable, message });
+      if (controller.signal.aborted) throw new Error(message);
       if (!retryable || index === delaysMs.length - 1) throw error;
     } finally {
       clearTimeout(timer);
