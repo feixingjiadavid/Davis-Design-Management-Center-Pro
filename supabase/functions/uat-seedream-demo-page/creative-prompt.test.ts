@@ -24,13 +24,38 @@ test("cover prompt puts concept and composition rules before business copy", () 
     styleReference: { file_name: "style.jpg", note: "主参考" },
     assets: [{ file_name: "IP.png", asset_role: "TIG IP" }, { file_name: "logo.png", asset_role: "WeBank Logo" }],
   });
-  assert.ok(prompt.indexOf("先建立一个明确的视觉创意概念") < prompt.indexOf("【本页业务文案】"));
+  assert.ok(prompt.indexOf("先建立一个明确的视觉创意概念") < prompt.indexOf("【本页必须呈现的业务文案】"));
   assert.match(prompt, /封面不是正文信息页/);
   assert.match(prompt, /至少三层空间关系/);
   assert.match(prompt, /IP必须与场景、道具、文字或图形发生关系/);
   assert.match(prompt, /禁止.*横向色带|禁止.*色块分区/);
   assert.match(prompt, /像资深设计师完成的主视觉/);
   assert.ok(prompt.length <= 4500);
+});
+
+test("cover renders only the first six priority lines and keeps overflow as non-rendered context", () => {
+  const copy = Array.from({ length: 10 }, (_, index) => `封面文案${index + 1}`);
+  const prompt = buildCreativeDemoPrompt({
+    brief: { goal: "活动海报", layout_plan: ["第1页（封面）：主标题优先"] },
+    page: { index: 1, title: "封面页", copy },
+    styleReference: { file_name: "ref.jpg" },
+    assets: [],
+  });
+  assert.match(prompt, /【本页必须呈现的业务文案】[\s\S]*封面文案6/);
+  assert.doesNotMatch(prompt.match(/【本页必须呈现的业务文案】[\s\S]*?【仅作理解上下文，不要在封面重复排版】/)?.[0] || "", /封面文案7/);
+  assert.match(prompt, /【仅作理解上下文，不要在封面重复排版】[\s\S]*封面文案7/);
+  assert.match(prompt, /封面文案10/);
+});
+
+test("non-cover information pages keep all supplied page copy as renderable content", () => {
+  const prompt = buildCreativeDemoPrompt({
+    brief: { goal: "活动海报" },
+    page: { index: 2, title: "规则页", copy: ["规则A", "规则B", "规则C"] },
+    styleReference: { file_name: "ref.jpg" },
+    assets: [],
+  });
+  assert.match(prompt, /【本页必须呈现的业务文案】[\s\S]*规则A[\s\S]*规则B[\s\S]*规则C/);
+  assert.doesNotMatch(prompt, /仅作理解上下文/);
 });
 
 test("prompt keeps required asset identities and reference style separate", () => {
