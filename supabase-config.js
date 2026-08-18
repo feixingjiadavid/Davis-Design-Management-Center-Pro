@@ -59,10 +59,10 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
-  // Demo 由单页顺序生成控制器接管：只更新 Demo 卡片，不再整页轮询重绘。
-  import('./js/seedream-demo-orchestrator.js?v=seedream-demo-sequential-v2')
-    .then(module => module.bootstrapSeedreamDemoOrchestrator(supabase))
-    .catch(error => console.error('Seedream Demo 顺序生成控制器加载失败:', error));
+  // Demo v3：断点续跑，已完成页面固定保留，只从第一张未完成页继续。
+  import('./js/seedream-demo-orchestrator-v3.js?v=seedream-demo-resume-v3')
+    .then(module => module.bootstrapSeedreamDemoOrchestratorV3(supabase))
+    .catch(error => console.error('Seedream Demo v3 控制器加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
