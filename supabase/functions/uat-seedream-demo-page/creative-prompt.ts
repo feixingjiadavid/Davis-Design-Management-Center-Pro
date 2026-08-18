@@ -8,6 +8,7 @@ function strings(value:unknown){
   return Array.isArray(value) ? value.map(String).map(v=>v.trim()).filter(Boolean) : [];
 }
 function compactList(value:unknown, limit=6){ return strings(value).slice(0,limit).join("；"); }
+function isCover(page:Page){ return /封面|主视觉|首图|开场/i.test(page.title); }
 function relevantLayout(brief:Record<string,any>, page:Page){
   const plans=strings(brief.layout_plan);
   const hit=plans.find(line=>line.includes(`第${page.index}页`) || line.includes(page.title));
@@ -25,14 +26,23 @@ function visualSummary(brief:Record<string,any>){
   ].filter(Boolean).join("\n");
 }
 function coverStrategy(page:Page){
-  if(!/封面|主视觉|首图|开场/i.test(page.title)) return "这是信息页：先确定一个视觉主轴，再围绕主轴组织规则、数据或模块；禁止平均分栏和模板式卡片堆叠。";
-  return "这是封面页。封面不是正文信息页：第1条文案作为绝对主标题；其余信息必须明显降级为副标题、贴纸、标签或短提示，不能每条都做成同等重量的模块。先让人一眼看到主题和主视觉，再在第二眼读到核心卖点。";
+  if(!isCover(page)) return "这是信息页：先确定一个视觉主轴，再围绕主轴组织规则、数据或模块；禁止平均分栏和模板式卡片堆叠。";
+  return "这是封面页。封面不是正文信息页：第1条文案作为绝对主标题；其余必须呈现的信息明显降级为副标题、贴纸、标签或短提示，不能每条都做成同等重量的模块。先让人一眼看到主题和主视觉，再在第二眼读到核心卖点。";
+}
+function pageCopySections(page:Page){
+  const all=page.copy.map(String).map(v=>v.trim()).filter(Boolean);
+  const renderable=isCover(page) ? all.slice(0,6) : all;
+  const context=isCover(page) ? all.slice(6) : [];
+  const renderText=renderable.map((line,i)=>`${i+1}. ${line}`).join("\n");
+  const contextText=context.map((line,i)=>`${i+1}. ${line}`).join("\n");
+  return {renderText,contextText};
 }
 
 export function buildCreativeDemoPrompt(args:{brief:Record<string,any>;page:Page;styleReference:StyleReference;assets:Asset[]}){
   const {brief,page,styleReference,assets}=args;
-  const copy=page.copy.map((line,i)=>`${i+1}. ${line}`).join("\n");
+  const copySections=pageCopySections(page);
   const assetText=assets.slice(0,9).map((a,i)=>`图${i+2}：${a.asset_role||a.file_name||'必用素材'}，保持身份特征与主要外观${a.note?`（${a.note}）`:''}`).join("\n");
+  const contextBlock=copySections.contextText ? `\n\n【仅作理解上下文，不要在封面重复排版】\n这些信息会在后续页面展开。理解它们有助于建立主题，但不要把它们再塞进当前封面：\n${copySections.contextText}` : "";
   const prompt=`你是资深品牌视觉创意总监，不是排版工具。你的任务是直接完成一张具有成熟广告创意与视觉叙事的企业宣传设计 Demo。
 
 【最重要：先做设计，再放素材】
@@ -60,9 +70,9 @@ ${visualSummary(brief)}
 ${assetText||'没有额外必用内容资产。'}
 Logo只是品牌签名，不要放大成为主视觉；IP和主题内容才可以承担视觉角色。所有必用资产不得换身份、换Logo或重绘成另一角色。
 
-【本页业务文案】
-这些是唯一允许出现的业务文字，不得编造额外业务文案。文字要按主次设计，不要逐条等权摆放：
-${copy}
+【本页必须呈现的业务文案】
+这些是当前页面允许出现并需要设计呈现的业务文字。保持文字含义和关键信息准确，但必须按主次设计，不能逐条等权摆放：
+${copySections.renderText}${contextBlock}
 
 【硬性限制】
 ${compactList(brief.constraints,8)||'四周保留安全边距，核心标题、IP、Logo和正文不得裁切'}
