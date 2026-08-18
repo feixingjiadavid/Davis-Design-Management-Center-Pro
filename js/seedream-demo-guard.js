@@ -1,6 +1,6 @@
 import { shouldContinuePolling, healthResult } from './seedream-demo-guard-core.js';
 
-const HEALTH_URL = 'https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-seedream-health';
+const HEALTH_URL = 'https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-ark-gateway';
 const POLL_MS = 1500;
 let pollTimer = null;
 let inflightTaskId = '';
@@ -40,13 +40,13 @@ function renderConnectivity(button, state, detail = '') {
   if (!node) return;
   if (state === 'checking') {
     node.className = 'text-[11px] mt-3 text-amber-300';
-    node.textContent = '正在检查 Supabase → 火山方舟 Ark 连通性（不产生生图费用）…';
+    node.textContent = '正在检查 UAT Ark Gateway → 火山方舟连通性（不产生生图费用）…';
   } else if (state === 'ok') {
     node.className = 'text-[11px] mt-3 text-emerald-300';
-    node.textContent = `Ark 连通正常${detail ? ` · ${detail}` : ''}`;
+    node.textContent = `UAT Ark Gateway 连通正常${detail ? ` · ${detail}` : ''}`;
   } else {
     node.className = 'text-[11px] mt-3 text-rose-300';
-    node.textContent = `Ark 当前未连通${detail ? `：${detail}` : ''}。未发起 Seedream 生图，不会产生本次图像用量。`;
+    node.textContent = `UAT Ark Gateway 当前不可用${detail ? `：${detail}` : ''}。未发起 Seedream 生图，不会产生本次图像用量。`;
   }
 }
 
@@ -116,7 +116,7 @@ export function bootstrapSeedreamDemoGuard(supabase) {
     if (button.disabled) return;
     const original = button.textContent;
     button.disabled = true;
-    button.textContent = '检查 Ark 连通性…';
+    button.textContent = '检查 UAT Ark Gateway…';
     const health = await checkHealth(supabase, button);
     if (!health.ok) {
       renderConnectivity(button, 'failed', health.error);
