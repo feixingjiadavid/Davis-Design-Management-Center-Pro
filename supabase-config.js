@@ -37,13 +37,11 @@ try {
   throw error;
 }
 
-// 创建连接通道并暴露给其他页面使用
 export const supabase = sdk.createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
   window.__davisSupabaseSdkSource = sdk.source;
 
-  // index.js 可能因为上方异步 SDK 加载耗时而错过 DOMContentLoaded；恢复器只在需求大厅且仍处于“加载中”时兜底启动。
   import('./js/index-lifecycle-recovery.js?v=uat-index-lifecycle-v1')
     .catch(error => console.error('需求大厅生命周期恢复模块加载失败:', error));
 
@@ -52,17 +50,14 @@ if (typeof window !== 'undefined') {
     .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-v2'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('设计输入模块加载失败:', error));
+
   import('./js/ai-auto-recovery.js?v=uat-state-recovery-v48-required-assets')
     .then(module => module.bootstrapAiAutoRecovery(supabase))
     .catch(error => console.error('AI 自动恢复模块加载失败:', error));
+
   import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
-  import('./js/seedream-demo-ui-copy.js?v=seedream-demo-v1')
-    .catch(error => console.error('Seedream Demo 工作台文案模块加载失败:', error));
-  import('./js/seedream-demo-recovery.js?v=seedream-demo-progress-v3')
-    .then(module => module.bootstrapSeedreamDemoRecovery(supabase))
-    .catch(error => console.error('Seedream Demo 实时进度模块加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
