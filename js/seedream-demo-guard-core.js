@@ -6,8 +6,13 @@ export function shouldContinuePolling({ inflight, text }) {
 }
 
 export function healthResult(payload) {
-  if (payload?.ok === true && payload?.network_reachable === true) {
-    return { ok: true, status: Number(payload.status || 0) };
+  const seedream = payload?.seedream || {};
+  if (payload?.ark_key_present === false) {
+    return { ok: false, error: 'ARK_API_KEY_MISSING' };
   }
-  return { ok: false, error: String(payload?.error || 'ARK_NETWORK_UNREACHABLE') };
+  if (payload?.ok === true && seedream?.reachable === true) {
+    return { ok: true, status: Number(seedream.status || 0) };
+  }
+  const detail = String(seedream?.error || payload?.error || 'ARK_NETWORK_UNREACHABLE');
+  return { ok: false, error: detail };
 }
