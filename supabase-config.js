@@ -58,6 +58,10 @@ if (typeof window !== 'undefined') {
   import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
+
+  import('./js/seedream-demo-guard.js?v=seedream-ark-health-poll-v1')
+    .then(module => module.bootstrapSeedreamDemoGuard(supabase))
+    .catch(error => console.error('Seedream Demo 连通性/实时轮询模块加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
