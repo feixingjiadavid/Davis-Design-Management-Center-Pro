@@ -60,11 +60,12 @@ async function generateViaUatArkGateway(
   if (!response.ok || !payload?.ok) {
     throw new Error(String(payload?.error || `SEEDREAM_GATEWAY_HTTP_${response.status}`));
   }
-  if (!payload?.image_url) throw new Error("SEEDREAM_OUTPUT_MISSING");
+  if (!payload?.image_url && !payload?.provider_url) throw new Error("SEEDREAM_OUTPUT_MISSING");
 
   return {
-    image_url: String(payload.image_url),
-    storage_path: payload.storage_path || null,
+    image_url: String(payload.drive_thumbnail_url || payload.image_url || payload.provider_url || ""),
+    provider_url: String(payload.provider_url || "") || null,
+    storage_path: null,
     provider: "seedream",
     model: String(payload.model || SEEDREAM_DEMO_MODEL),
     size: { width: size.width, height: size.height },
@@ -74,12 +75,15 @@ async function generateViaUatArkGateway(
     actual_size: String(payload.actual_size || ""),
     dimension_match: true,
     input_image_count: Number(payload.input_image_count ?? images.length),
-    drive_file_id: null,
-    drive_url: null,
-    drive_thumbnail_url: null,
-    drive_folder_id: null,
-    drive_folder_url: null,
-    drive_file_name: null,
+    drive_file_id: payload.drive_file_id || null,
+    drive_url: payload.drive_url || null,
+    drive_thumbnail_url: payload.drive_thumbnail_url || null,
+    drive_folder_id: payload.drive_folder_id || null,
+    drive_folder_url: payload.drive_folder_url || null,
+    drive_file_name: payload.drive_file_name || null,
+    drive_archive_status: String(payload.drive_archive_status || (payload.drive_file_id ? "completed" : "failed")),
+    drive_error: payload.drive_error || null,
+    persistent_storage: payload.drive_file_id ? "google_drive" : "provider_temporary",
     usage: payload.usage || {},
   };
 }
