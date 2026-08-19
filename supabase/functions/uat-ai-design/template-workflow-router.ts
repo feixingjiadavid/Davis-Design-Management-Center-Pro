@@ -1,6 +1,7 @@
 import { approveFramework, rejectFramework } from './framework-lifecycle-service.ts';
 import { generateFrameworkRevision } from './framework-adjustment-service.ts';
 import { acceptCurrentRevision, checkContentUpdate, prepareContentRevision, queueContentRevision } from './content-revision-service.ts';
+import { submitRequesterRevisionRequest } from './content-revision-request.mjs';
 import { ingestTaskSources } from './source-service.ts';
 import { analyzeRequirement, confirmUnderstanding } from './analysis-service.ts';
 
@@ -14,6 +15,7 @@ export const TEMPLATE_WORKFLOW_ACTIONS = new Set([
   'check_content_update',
   'prepare_content_revision',
   'generate_content_revision',
+  'submit_content_revision_request',
   'accept_current_revision',
 ]);
 
@@ -59,6 +61,49 @@ export async function handleTemplateWorkflowAction(args: any) {
         confirmAnalysis: confirmUnderstanding,
       });
       return { handled: true, status: 202, body: { ok: true, ...data } };
+    }
+
+    if (action === 'submit_content_revision_request') {
+      const data = await submitRequesterRevisionRequest(admin, task, auth.user.id, {
+        ...body,
+        user_jwt: jwt,
+      }, {
+        refreshSources: ingestTaskSources,
+        prepare: prepareContentRevision,
+        queue: queueContentRevision,
+        prepareDeps: { analyze: analyzeRequirement },
+      });
+      const status = String(data?.status || '');
+      if (status === 'capacity_conflict') {
+        await admin.from('test_tasks').update({
+          status: 'reviewing',
+          summary_desc: 'AI设计师已分析修改意见：新内容超出已通过母版容量，请需求方调整后重新提交',
+        }).eq('id', taskId);
+      } else if (status === 'needs_input') {
+        await admin.from('test_tasks').update({
+          status: 'needs_input',
+          summary_desc: 'AI设计师已收到修改意见，但仍有关键信息需要需求方补充',
+        }).eq('id', taskId);
+      } else if (status === 'no_change') {
+        await admin.from('test_tasks').update({
+          status: 'reviewing',
+          summary_desc: 'AI设计师已检查修改意见，当前无需重新生成，可直接验收',
+        }).eq('id', taskId);
+      }
+      await admin.from('uat_audit_log').insert({
+        actor_id: auth.user.id,
+        actor_email: email,
+        action: 'requester_revision_request_submitted',
+        task_id: taskId,
+        details: {
+          status,
+          requester_feedback: String(body.requester_feedback || ''),
+          refresh_tencent_doc: Boolean(body.refresh_tencent_doc),
+          affected_pages: data?.prepared?.affected_pages || data?.affected_pages || [],
+          generation_started: status === 'processing',
+        },
+      });
+      return { handled: true, status: status === 'processing' ? 202 : 200, body: { ok: true, ...data } };
     }
 
     if (action === 'check_content_update') {
