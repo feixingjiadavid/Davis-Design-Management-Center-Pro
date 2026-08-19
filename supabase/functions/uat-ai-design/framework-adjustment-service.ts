@@ -26,10 +26,11 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   if (String(task.status) !== 'rejected' || formal?.action !== 'reject_framework') throw new Error('FRAMEWORK_NOT_WAITING_REQUESTER_DIRECTION');
 
   const submitted: any = latestSubmittedFramework(history);
+  const leaderFeedback = String(formal?.reply || '').trim();
   const adjustment = await admin.from('uat_framework_adjustments').insert({
     task_id: taskId,
     based_on_framework_version: String(submitted?.version || formal?.version || ''),
-    leader_feedback: String(formal?.reply || ''),
+    leader_feedback: leaderFeedback,
     requester_direction: direction,
     supplemental_content: String(payload?.supplemental_content || '').trim() || null,
     refresh_tencent_doc: Boolean(payload?.refresh_tencent_doc),
@@ -42,6 +43,14 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   const augmentedTask = {
     ...task,
     full_desc: [String(task.full_desc || ''), supplemental ? `本轮补充业务内容：${supplemental}` : ''].filter(Boolean).join('\n\n'),
+    workflow_context: {
+      mode: 'framework_revision',
+      based_on_framework_version: String(submitted?.version || ''),
+      leader_feedback: leaderFeedback,
+      requester_direction: direction,
+      supplemental_content: supplemental,
+      rule: '领导驳回后的下一轮框架必须以需求方与领导沟通后的 requester_direction 为执行方向；不得由 AI 自行猜测替代。',
+    },
   };
   const analysis = await deps.analyze(admin, augmentedTask, payload?.user_jwt || '');
 
@@ -81,7 +90,7 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
     action: 'framework_adjustment_submitted',
     adjustment_id: adjustment.data.id,
     based_on_version: String(submitted?.version || ''),
-    leader_feedback: String(formal?.reply || ''),
+    leader_feedback: leaderFeedback,
     requester_direction: direction,
     operator: 'UAT 需求方',
     time: new Date().toISOString(),
