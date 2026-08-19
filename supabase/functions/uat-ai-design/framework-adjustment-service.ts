@@ -11,6 +11,10 @@ function historyOf(task: any) {
     return [];
   }
 }
+function latestLeaderReject(history: any[]) {
+  for (let index = history.length - 1; index >= 0; index -= 1) if (history[index]?.action === 'reject_framework') return history[index];
+  return null;
+}
 
 export async function generateFrameworkRevision(admin: any, taskId: string, actorId: string, payload: any, deps: any) {
   const direction = String(payload?.requester_direction || '').trim();
@@ -23,13 +27,14 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   const task = taskResult.data;
   const history = historyOf(task);
   const formal = latestFormalAction(history);
-  if (String(task.status) !== 'rejected' || formal?.action !== 'reject_framework') throw new Error('FRAMEWORK_NOT_WAITING_REQUESTER_DIRECTION');
+  if (String(task.status) !== 'rejected' || !['reject_framework','framework_adjustment_submitted'].includes(String(formal?.action || ''))) throw new Error('FRAMEWORK_NOT_WAITING_REQUESTER_DIRECTION');
 
   const submitted: any = latestSubmittedFramework(history);
-  const leaderFeedback = String(formal?.reply || '').trim();
+  const leaderReject = latestLeaderReject(history);
+  const leaderFeedback = String(leaderReject?.reply || '').trim();
   const adjustment = await admin.from('uat_framework_adjustments').insert({
     task_id: taskId,
-    based_on_framework_version: String(submitted?.version || formal?.version || ''),
+    based_on_framework_version: String(submitted?.version || leaderReject?.version || ''),
     leader_feedback: leaderFeedback,
     requester_direction: direction,
     supplemental_content: String(payload?.supplemental_content || '').trim() || null,
@@ -55,16 +60,11 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   const analysis = await deps.analyze(admin, augmentedTask, payload?.user_jwt || '');
 
   if (String(analysis.status) === 'clarification_required') {
-    await admin.from('test_tasks').update({
-      status: 'needs_input',
-      summary_desc: '框架调整资料仍有关键信息需要需求方补充',
-    }).eq('id', taskId);
+    await admin.from('test_tasks').update({ status: 'needs_input', summary_desc: '框架调整资料仍有关键信息需要需求方补充' }).eq('id', taskId);
     return { status: 'needs_input', adjustment: adjustment.data, analysis, generations: [] };
   }
   if (!['understanding_ready', 'confirmed'].includes(String(analysis.status))) throw new Error('ANALYSIS_NOT_READY');
-  if (String(analysis.status) === 'understanding_ready' && deps?.confirmAnalysis) {
-    await deps.confirmAnalysis(admin, taskId, analysis.id, actorId);
-  }
+  if (String(analysis.status) === 'understanding_ready' && deps?.confirmAnalysis) await deps.confirmAnalysis(admin, taskId, analysis.id, actorId);
   await admin.from('uat_framework_adjustments').update({ consumed_by_analysis_id: analysis.id }).eq('id', adjustment.data.id);
 
   const pages = Array.isArray(analysis?.brief?.pages) ? analysis.brief.pages : [];
@@ -87,18 +87,12 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   if (queued.error) throw queued.error;
 
   history.push({
-    action: 'framework_adjustment_submitted',
-    adjustment_id: adjustment.data.id,
-    based_on_version: String(submitted?.version || ''),
-    leader_feedback: leaderFeedback,
-    requester_direction: direction,
-    operator: 'UAT 需求方',
-    time: new Date().toISOString(),
+    action: 'framework_adjustment_submitted', adjustment_id: adjustment.data.id,
+    based_on_version: String(submitted?.version || ''), leader_feedback: leaderFeedback,
+    requester_direction: direction, operator: 'UAT 需求方', time: new Date().toISOString(),
   });
   await admin.from('test_tasks').update({
-    status: 'processing',
-    summary_desc: '需求方已提交新框架调整要求，AI 正在生成下一版框架',
-    history_json: JSON.stringify(history),
+    status: 'processing', summary_desc: '需求方已提交新框架调整要求，AI 正在生成下一版框架', history_json: JSON.stringify(history),
   }).eq('id', taskId);
   return { status: 'processing', adjustment: adjustment.data, analysis, generations: queued.data || [] };
 }
