@@ -2,75 +2,27 @@
 
 日期：2026-08-19
 
-## 1. 目标
+## 1. 目标与不可变原则
 
-为 AI 设计流程建立一条稳定、可追溯且不会风格漂移的正式机制：
+本设计把“框架方向”和“业务内容”彻底分开：
 
-1. 第一阶段由 AI 生成框架 Demo，并由领导只负责审批设计框架方向。
-2. 领导驳回框架后，不允许 AI 自动重生；任务必须回到需求方，由需求方与领导沟通并整理明确的本轮框架调整要求，再触发新一轮框架生成。
-3. 框架一旦被领导通过，当前通过版本永久冻结为该需求的唯一设计母版；需求方无权改变框架方向。
-4. 领导通过后，如果内容无需变化，需求方可以直接验收当前 Demo 并完结任务，不能再次调用 Seedream。
-5. 如果业务内容发生变化，需求方可以更新腾讯文档或在系统内直接提交新内容；AI 只允许基于已通过母版做内容改版，不得重新设计风格。
-6. 后续内容改版不再经过领导审批，直接回到需求方验收。
-7. 只有内容实际变化且需求方明确提交生成动作时，才允许产生新的付费生成请求；系统禁止自动付费重试和自动生图。
-8. 能复用未变化页面时必须复用，避免无意义生成、成本浪费和视觉漂移。
+1. 第一阶段由 AI 生成框架 Demo，领导只负责审批设计框架方向。
+2. 领导驳回后，任务必须先回需求方；AI 不得自动猜测修改并重新生图。
+3. 需求方需要和领导沟通后，整理成明确的“本轮框架调整要求”，再由需求方主动触发下一轮框架生成。
+4. 框架可以无限循环 `AI → 领导 → 需求方 → AI → 领导`，直到领导通过。
+5. 领导一旦通过某一轮框架，该版本永久冻结为该需求唯一设计母版；需求方无权换风格、改框架或重新定义设计方向。
+6. 领导通过后，如果内容无需调整，需求方可以直接验收当前 Demo 并完结，不能再次调用 Seedream。
+7. 如果内容需要变化，需求方可以更新腾讯文档、在系统内填写新内容，或两者同时使用；AI 只能基于已通过母版做内容改版。
+8. 后续内容改版不再经过领导审批，直接回需求方验收。
+9. 内容检测、文档变化、状态变化都不能自动触发付费生成；只有用户明确点击生成按钮才允许创建 Seedream 请求。
+10. 未变化页面必须复用，避免成本浪费和风格漂移。
+11. 高清设计原图继续存 Google Drive；Supabase 保存结构化事实、版本关系和 Drive file id，不承担高清原图长期存储。
 
-## 2. 不做的事情
+## 2. 正式任务状态流转
 
-- 不增加第二套审批系统。
-- 不允许需求方在框架通过后选择“换风格”“重新设计”“大改方向”。
-- 不允许领导驳回后 AI 根据一句模糊意见自行猜测并自动生成下一版。
-- 不允许后台检测到文档变化后自动调用 Seedream。
-- 不允许后续内容修改以“上一轮修改版”为唯一视觉基准逐轮漂移；所有后续改版始终回锚领导批准的母版。
-- 不允许 Supabase 作为高清设计原图长期存储；高清原图继续存 Google Drive，Supabase 仅保存结构化元数据和引用 ID。
+继续复用 `test_tasks.status`，不创建第二套任务生命周期。
 
-## 3. 角色权限
-
-### 3.1 领导
-
-领导只拥有“框架方向”的审批权：
-
-- 通过框架；
-- 驳回框架并填写可选意见。
-
-领导不负责后续内容改版验收。
-
-### 3.2 需求方
-
-框架未通过时：
-
-- 领导驳回后接收任务；
-- 与领导沟通；
-- 填写“本轮框架调整要求”；
-- 可以同步更新腾讯文档或补充系统内信息；
-- 明确点击后才允许触发下一轮框架生成。
-
-框架已通过后：
-
-- 无权修改设计框架方向；
-- 可以直接验收已通过 Demo；
-- 可以更新业务内容并提交新一轮内容改版；
-- 可以反复进行内容更新与验收，直到最终完成。
-
-### 3.3 AI 设计师
-
-框架阶段：
-
-- 根据原始需求、视觉参考、必用资产和需求方本轮调整要求生成框架版本；
-- 领导驳回后必须等待需求方提交明确调整要求，禁止自行生成下一版。
-
-母版阶段：
-
-- 把领导通过的框架版本视为不可变视觉母版；
-- 后续只做内容改版；
-- 必须以母版页面作为强视觉参考输入；
-- 不得擅自改变设计方向。
-
-## 4. 正式状态流转
-
-继续复用 `test_tasks.status` 现有正式状态，不创建第二套生命周期状态机。
-
-### 4.1 框架阶段
+### 2.1 框架阶段
 
 ```text
 processing
@@ -78,55 +30,119 @@ processing
 pending_approval
   ├─ 领导驳回 → rejected
   │                ↓
-  │          需求方沟通并填写调整要求
+  │       需求方与领导沟通
   │                ↓
-  │          明确提交新一轮生成
+  │       填写本轮框架调整要求
+  │                ↓
+  │       需求方明确点击生成
   │                ↓
   │            processing
   │                ↓
   │          pending_approval
-  │                └─ 可无限循环
+  │                └─ 不通过则继续循环
   │
   └─ 领导通过 → reviewing
 ```
 
-关键规则：
+硬规则：
 
-- `reject_framework` 后禁止自动生图。
-- `rejected` 阶段必须由需求方提交新的“框架调整要求”后才能回到 `processing`。
-- 每一轮框架版本都独立保留，不能覆盖旧版本。
+- `reject_framework` 后 0 次 provider generation。
+- `rejected` 阶段没有需求方调整要求时，AI 无权生成新框架。
+- 领导意见可以很简短，它只作为输入之一；真正用于下一轮生成的执行要求来自需求方和领导沟通后提交的 `requester_direction`。
+- 每轮框架版本 v1/v2/v3... 独立保留，不能覆盖旧版本。
 
-### 4.2 母版通过后的验收与内容修改
+### 2.2 母版通过后的验收与内容改版
 
 ```text
 reviewing
-  ├─ 内容无需修改 → 需求方确认验收 → completed
-  │                       （不调用 Seedream）
+  ├─ 无内容修改 → 需求方直接验收 → completed
+  │                    （0 次 Seedream）
   │
   └─ 内容需要调整
         ↓
-     需求方更新腾讯文档 / 系统内填写新内容
+     更新腾讯文档 / 系统内填写内容
         ↓
-     系统检测内容差异
+     检测差异（0 次 Seedream）
         ↓
      需求方明确点击“提交内容更新并生成新版本”
         ↓
      processing
         ↓
-     AI 基于已通过母版生成受影响页面
+     仅生成受影响页面
         ↓
      reviewing
         ├─ 满意 → completed
         └─ 继续改内容 → 重复本循环
 ```
 
-领导在母版通过后不再进入该循环。
+母版通过后不再回 `pending_approval`，领导不再参与后续内容改版。
 
-## 5. 数据模型
+## 3. 角色权限
 
-### 5.1 `uat_framework_templates`
+### 3.1 领导
 
-用途：保存领导通过后的唯一正式设计母版。
+仅拥有框架审批权：
+
+- `approve_framework`
+- `reject_framework`
+
+领导不负责后续内容改版验收。
+
+### 3.2 需求方
+
+框架未通过时：
+
+- 接收领导驳回；
+- 与领导沟通；
+- 填写本轮框架调整要求；
+- 可同时刷新腾讯文档或补充系统文字；
+- 主动点击后才允许触发下一轮生成。
+
+框架已通过后：
+
+- 无权修改母版；
+- 可直接验收；
+- 可更新业务内容；
+- 可反复提交内容 revision，直到最终验收。
+
+### 3.3 AI 设计师
+
+框架阶段：根据原始需求、视觉参考、必用资产、上一轮被驳回框架、领导意见和需求方明确调整要求生成下一版框架。
+
+母版阶段：始终把领导通过版本视为最高优先级视觉锚点，只做内容改版，不得重新设计风格。
+
+## 4. 数据模型
+
+新增三个“事实记录表”，但不新增第二套任务状态机。
+
+### 4.1 `uat_framework_adjustments`
+
+用途：结构化保存每一次领导驳回后，需求方整理出的下一轮可执行调整要求。
+
+建议字段：
+
+```text
+id uuid pk
+task_id text not null
+based_on_framework_version text not null
+leader_feedback text
+requester_direction text not null
+supplemental_content text
+refresh_tencent_doc boolean default false
+created_by uuid
+created_at timestamptz
+consumed_by_generation_run text / uuid
+```
+
+约束：
+
+- `requester_direction` 必填。
+- 一条 adjustment 只能被一个新框架 generation run 消费一次。
+- adjustment 本身只代表用户输入，不是任务状态。
+
+### 4.2 `uat_framework_templates`
+
+用途：保存领导最终通过后的唯一正式设计母版。
 
 建议字段：
 
@@ -135,41 +151,43 @@ id uuid pk
 task_id text not null unique
 framework_version text not null
 analysis_id uuid
-approved_by uuid / text
-approved_at timestamptz
+approved_by uuid
+approved_by_label text
+approved_at timestamptz not null
 approval_note text
 page_count int not null
 width int
 height int
 source_content_hash text
+pages jsonb not null
 created_at timestamptz
 ```
 
-母版页面明细建议使用 JSONB 或独立页表。优先使用 JSONB `pages`，结构如下：
+`pages` 示例：
 
 ```json
 [
   {
     "page_index": 1,
+    "page_title": "封面页",
     "generation_id": "...",
     "drive_file_id": "...",
     "drive_url": "...",
-    "exact_copy": ["..."],
-    "page_title": "..."
+    "exact_copy": ["..."]
   }
 ]
 ```
 
 约束：
 
-- 一个 task 只能存在一个“当前有效母版”。
-- 母版建立后不允许需求方修改或替换。
-- 只有框架未通过阶段允许产生新的框架版本；领导最终通过的那一版成为唯一母版。
-- 高清图片存 Google Drive，表中只保存 Drive file id / URL / generation id。
+- 一个 task 只能存在一个有效母版。
+- 只允许服务端在 `approve_framework` 成功后创建。
+- 需求方无更新/替换权限。
+- 高清原图仍在 Google Drive。
 
-### 5.2 `uat_content_revisions`
+### 4.3 `uat_content_revisions`
 
-用途：保存每一次母版锁定后的内容修改请求和生成结果。
+用途：保存母版锁定后的每一次业务内容修改请求和生成结果。
 
 建议字段：
 
@@ -184,6 +202,7 @@ previous_content_hash text
 new_content_hash text
 change_summary jsonb
 affected_pages int[]
+page_manifest jsonb
 status text not null
 created_by uuid
 created_at timestamptz
@@ -191,32 +210,15 @@ submitted_at timestamptz
 generated_at timestamptz
 ```
 
-`source_mode`：
+`source_mode`：`tencent_doc | system_text | combined`
 
-- `tencent_doc`
-- `system_text`
-- `combined`
+`status`：`draft | content_ready | generation_requested | generating | ready_for_review | capacity_conflict | failed | accepted`
 
-`status`：
+这些是 revision 记录自身状态，不替代 `test_tasks.status`。
 
-- `draft`
-- `content_ready`
-- `generation_requested`
-- `generating`
-- `ready_for_review`
-- `capacity_conflict`
-- `failed`
-- `accepted`
+## 5. history_json 正式动作
 
-此状态是“内容修订记录自身状态”，不是任务生命周期状态，因此不会和 `test_tasks.status` 形成第二套审批流。
-
-生成结果可通过 `uat_design_generations` 的 `parent_generation_id`、`revision_id` 或 output metadata 关联。
-
-## 6. 历史记录 `history_json`
-
-继续把用户和审批动作写进现有 `history_json`，保证管理台、时间线、统计逻辑继续工作。
-
-正式动作：
+继续写入现有历史，保证管理台、时间线和统计兼容：
 
 ```text
 submit_framework
@@ -228,9 +230,9 @@ submit_draft
 complete
 ```
 
-### 6.1 领导驳回
+### 5.1 领导驳回
 
-`reject_framework`：
+`reject_framework` 只记录结果，不生成：
 
 ```json
 {
@@ -242,27 +244,20 @@ complete
 }
 ```
 
-只记录意见和流程结果，不生成下一版。
-
-### 6.2 需求方提交框架调整要求
-
-`framework_adjustment_submitted`：
+### 5.2 需求方提交新方向
 
 ```json
 {
   "action": "framework_adjustment_submitted",
+  "adjustment_id": "...",
   "based_on_version": "v-2",
   "leader_feedback": "领导原始意见",
-  "requester_direction": "需求方与领导沟通后整理的可执行调整要求",
+  "requester_direction": "与领导沟通后整理的明确执行要求",
   "operator": "需求方"
 }
 ```
 
-该动作是下一轮框架生成的正式门禁。
-
-### 6.3 内容修订
-
-`content_revision_submitted`：
+### 5.3 内容修订
 
 ```json
 {
@@ -276,248 +271,282 @@ complete
 }
 ```
 
-## 7. 框架驳回后的需求方 UI
+## 6. 框架驳回后的需求方 UI
 
-任务状态 `rejected` 且最新动作是 `reject_framework` 时，需求方详情页显示专用卡片：
+当 `task.status = rejected` 且最新正式动作是 `reject_framework`，详情页展示专用模块：
 
-标题：
+**标题：框架方案被领导驳回**
 
-> 框架方案被领导驳回
+展示：
 
-内容：
+- 当前被驳回的框架版本及三页高清图；
+- 领导原始意见；
+- 提示“请先与领导沟通确认后，再整理下一轮调整方向”。
 
-- 展示领导原始意见；
-- 提示需求方先与领导沟通确认方向；
-- 必填输入框：`本轮框架调整要求`；
-- 可选操作：重新读取腾讯文档；
-- 可选操作：补充系统内文字说明；
-- 最终按钮：`提交调整要求，重新生成框架`。
+输入：
 
-按钮点击前不能调用生成接口。
+- 必填：`本轮框架调整要求`；
+- 可选：重新读取腾讯文档；
+- 可选：系统内补充文字。
 
-点击后：
+按钮：
 
-1. 写 `framework_adjustment_submitted`；
-2. 新建/更新需求理解版本；
-3. task 状态改 `processing`；
-4. 仅由这次用户明确点击触发一轮新的框架生成。
+> 提交调整要求，重新生成框架
+
+这是一个明确的付费生成授权按钮。一次点击的事务顺序必须是：
+
+1. 写 `uat_framework_adjustments`；
+2. 写 `framework_adjustment_submitted`；
+3. 刷新需要读取的资料并生成新的需求理解；
+4. 创建新框架 generation run；
+5. task → `processing`；
+6. 生成完成后形成新的 `submit_framework` 并进入 `pending_approval`。
+
+按钮未点击前，0 次 generation。
+
+## 7. 领导通过后的母版冻结
+
+`approve_framework` 成功时必须在一个受控后端动作里完成：
+
+1. 找到领导实际批准的最新 `submit_framework`；
+2. 读取该版本 P1/P2/P3 generation ids 与 Drive file ids；
+3. 创建 `uat_framework_templates`；
+4. 保存当时的 page schema、exact_copy、尺寸和内容 hash；
+5. task → `reviewing`；
+6. history 写 `approve_framework`；
+7. 不生成 final，不调用 Seedream。
+
+这一步完成后，母版永久锁定。
 
 ## 8. 领导通过后的需求方 UI
 
-任务进入 `reviewing`。
-
-右侧操作区提供两个且只有两个业务方向：
+右侧操作区提供两个业务方向。
 
 ### 8.1 `确认验收并完结`
 
-含义：
-
-- 当前领导批准的 Demo 直接作为最终交付版本；
-- 写 `complete`；
+- 当前已批准 Demo 直接作为最终交付；
 - task → `completed`；
-- 不调用 Seedream；
-- 不创建新的 generation。
+- history 写 `complete`；
+- 0 次 Seedream；
+- 0 个新 generation。
 
 ### 8.2 `内容需要调整`
 
-展开内容更新模块，支持两种输入方式同时存在。
+展开内容更新模块。
 
-#### 腾讯文档
+#### 腾讯文档更新
 
 按钮：`检测腾讯文档最新内容`
 
-行为：
-
 - 重新读取当前正式腾讯文档；
-- 根据 `content_sha256` 判断是否出现新内容；
-- 如果 hash 未变化，提示“未检测到内容变化”，不进入生成流程；
-- 如果 hash 变化，显示差异摘要，但不自动生图。
+- 比较 snapshot `content_sha256`；
+- 无变化：提示未检测到变化；
+- 有变化：显示差异摘要；
+- 检测本身 0 次 generation。
 
 #### 系统内更新
 
-输入区域：
+输入框：`本轮需要调整的内容`
 
-> 本轮需要调整的内容
+支持完整新文案或逐页修改说明。
 
-支持直接粘贴完整新文案或逐页修改说明。
-
-最终按钮：
+#### 最终生成按钮
 
 > 提交内容更新并生成新版本
 
-只有点击该按钮才创建 generation request。
+只有该按钮允许创建 revision generation。
 
-## 9. 内容差异检测
+## 9. 页面结构与内容差异锁定
 
-复用现有 `uat_requirement_sources` + `uat_source_snapshots.content_sha256` 机制。
+框架通过后不只锁“风格”，还锁**页面结构**：
 
-差异检测分两层：
+- `page_count` 不变；
+- P1/P2/P3 页序不变；
+- 每页 `page_title / page_role` 不变；
+- AI 不得因为新腾讯文档内容自行重新拆页、合页或交换页面职责。
 
-### 9.1 是否变化
+新内容分析必须映射到母版既有 page schema。
 
-- 腾讯文档：使用新 snapshot SHA256 对比母版建立时或上一轮 revision 的 hash。
-- 系统内文字：规范化后计算 SHA256。
-- combined：将腾讯文档 snapshot + 系统内输入规范化合并后计算 revision hash。
+差异判断分两层：
 
-### 9.2 哪些页面变化
+### 9.1 全局内容是否变化
 
-不能只做全局 hash。还需要比较“每页正式文案”。
+- 腾讯文档：snapshot SHA256；
+- 系统内文字：规范化后 SHA256；
+- combined：腾讯文档快照 + 系统文字规范化合并后 hash。
 
-使用母版保存的 `pages[].exact_copy` 与新分析生成的每页 `copy` 做规范化比较：
+### 9.2 哪些既有页面发生变化
+
+用母版/当前 revision 的 `exact_copy` 与新内容在**固定 page schema** 下生成的 `exact_copy` 比较：
 
 - 完全相同 → 页面复用；
-- 内容变化 → 标记为 `affected_pages`；
-- 页面数量变化 → 进入容量/结构冲突检查，不允许直接改框架。
+- 内容变化 → 标记 affected；
+- 页数变化、页面职责变化或无法映射 → `capacity_conflict`，不生成。
 
-## 10. 页面级复用
+## 10. 页面级复用与版本 manifest
 
-母版或上一轮已验收待确认版本中，未变化页面必须直接复用已有 Drive 文件。
+未变化页面必须直接引用已有 Drive 文件；变化页面才允许重新生成。
 
-例如：
+例：
 
 ```text
-P1 未变化 → 复用母版 P1
-P2 变化   → 生成新 P2
-P3 未变化 → 复用母版 P3
+母版 P1 未变化 → 复用母版 P1
+P2 内容变化     → 生成 revision P2
+P3 未变化       → 复用母版 P3
 ```
 
-新的 revision 版本由“复用页面 + 新生成页面”组成。
+`page_manifest` 记录当前完整版本每页来自哪里：
 
-目的：
+```json
+[
+  {"page_index":1,"source":"template","drive_file_id":"..."},
+  {"page_index":2,"source":"revision","generation_id":"...","drive_file_id":"..."},
+  {"page_index":3,"source":"template","drive_file_id":"..."}
+]
+```
 
-- 降低生成成本；
-- 减少等待时间；
-- 最大程度避免风格随机漂移；
-- 避免无意义付费调用。
+如果某页在 r1 已经改过、r2 未再变化，则 r2 可以复用 r1 的该页文件；但**视觉锚点权威仍永远是 approved template**，不能把 r1 取代母版成为新设计模板。
 
 ## 11. 母版锁定生成策略
 
-新增专用 prompt/version，例如：
+新增专用 prompt/version：
 
 `seedream-template-revision-v1`
 
-不能复用第一轮用于创作新框架的 Creative Director Prompt，因为第一轮 Prompt 的职责是重新建立视觉概念、视觉中心和空间结构。
+不能复用第一轮 Creative Director Prompt。
 
 后续 revision Prompt 必须明确：
 
-> 当前输入的领导已通过设计图是不可变视觉母版，不是普通风格参考。
->
-> 禁止重新设计视觉风格、主题语言、整体构图体系、背景体系、色彩体系、字体气质、装饰语言、IP/Logo视觉规则和信息层级。
->
-> 只允许根据本轮业务内容变化，对必要文字、字号、行距、局部间距和局部元素位置做最小调整。
->
-> 除非新内容客观无法容纳，否则尽可能保持元素位置、尺寸比例、版面节奏、装饰、色彩、背景和视觉中心与母版一致。
->
-> 不得把本轮任务理解为“重新设计一套方案”。
+> 当前提供的领导已通过页面是不可变视觉母版，不是普通风格参考。禁止重新设计视觉风格、整体构图体系、背景体系、主色体系、字体气质、装饰语言、IP/Logo规则、页面职责和信息层级。只允许为本轮新业务内容做必要的文字、字号、行距、局部间距和局部元素位置调整。不得把任务理解为重新设计一套方案。
 
-### 11.1 模型输入顺序
+每个 affected page 的输入优先级：
 
-对每个受影响页面：
+1. 对应的 approved template page 高清图；
+2. 本页最新正式文案与差异说明；
+3. 必用业务素材；
+4. Logo/IP 原始资产；
+5. 其他外部 style reference（如果仍需使用，优先级低于母版）。
 
-1. 该页领导批准母版高清图（强制视觉锚点）；
-2. 该页必用业务素材；
-3. Logo / IP 等原始资产；
-4. 最新正式文案和差异说明。
-
-母版图优先级高于原始外部风格参考图。
-
-### 11.2 永远回锚母版
-
-v2、v3、v4 内容修改时，视觉参考仍然以“领导批准母版”为最高优先级，而不是单纯使用上一轮修改图作为新模板，防止多轮累计漂移。
-
-上一轮修改图可以作为内容位置参考，但不能替代母版的视觉权威。
+多轮 revision 始终回锚 approved template，防止累计漂移。
 
 ## 12. 内容容量冲突
 
-如果新内容明显超出已通过框架承载能力，系统不得擅自改变框架。
+以下情况进入 `capacity_conflict`，0 次 Seedream：
 
-进入 `capacity_conflict`，不调用 Seedream。
+- 页数需要变化；
+- 新内容无法映射到原页面职责；
+- 某页文字量明显超出母版合理容量；
+- 新增信息结构要求实质改变原框架。
 
 需求方看到：
 
 > 最新内容超出已通过设计框架的合理承载范围。框架已经由领导确认，系统不会擅自改变设计方向。请精简、拆分或重新组织内容后再次提交。
 
-典型条件：
-
-- 页面数量要求发生变化；
-- 新内容长度远超该页母版容量；
-- 新增结构块无法在原有层级内合理容纳；
-- 原单页被要求承担完全不同的信息类型。
-
-系统只能要求需求方调整内容，不能为解决容量问题自动换框架。
+系统不能为解决容量问题自动换框架。
 
 ## 13. 生成授权与计费安全
 
-所有付费生成遵守以下规则：
+0 次 provider generation 的动作：
 
-1. 领导驳回：不生成。
-2. 需求方仅填写调整要求：不生成，直到点击明确生成按钮。
-3. 检测腾讯文档更新：不生成。
-4. 系统检测到内容 hash 变化：不生成。
-5. 内容容量冲突：不生成。
-6. 需求方直接验收：不生成。
-7. 只有：
-   - `提交调整要求，重新生成框架`
-   - `提交内容更新并生成新版本`
-   这两类明确用户动作允许创建付费生成请求。
-8. Provider 状态不确定时禁止自动付费重试。
-9. 已经有可复用页面时不重复生成。
-10. 生成请求必须有 idempotency key。
+- 领导 `reject_framework`；
+- 检测腾讯文档更新；
+- 保存系统内文字；
+- 计算 hash/diff；
+- 创建 revision draft；
+- capacity conflict；
+- 需求方直接验收；
+- 页面复用。
+
+允许创建付费生成的用户动作只有：
+
+1. `提交调整要求，重新生成框架`
+2. `提交内容更新并生成新版本`
+
+其他规则：
+
+- 每个生成请求必须使用 idempotency key；
+- provider 是否已接受请求不明确时禁止自动付费重试；
+- 已有可复用页面不得重复生成；
+- 检测到内容变化不能自动生图。
 
 ## 14. Google Drive 存储
-
-继续使用 Google Drive 作为高清设计原图长期存储。
 
 建议目录：
 
 ```text
 TK-0001/
   framework/
-    v1/
-      P1.jpg
-      P2.jpg
-      P3.jpg
-    v2/
-      ...
+    v1/P1.jpg P2.jpg P3.jpg
+    v2/...
   approved-template/
-    P1.jpg
-    P2.jpg
-    P3.jpg
+    P1.jpg P2.jpg P3.jpg
   revisions/
-    r1/
-      P2.jpg
-    r2/
-      P1.jpg
-      P3.jpg
+    r1/...
+    r2/...
 ```
 
-数据库保存 Drive file ids 和映射关系。
-
-未变化页面不重复上传新文件，可在 revision manifest 中引用母版/前序 Drive file id。
+数据库保存 Drive file ids 和版本映射。未变化页面可以只在 manifest 中引用已有 Drive 文件，不重复上传。
 
 ## 15. 历史版本展示
 
-历史版本库必须区分：
+历史版本库区分：
 
-- 框架版本（v1/v2/v3）；
+- 框架版本 v1/v2/v3；
 - 当前领导批准母版；
-- 内容修改版本（r1/r2/r3）。
+- 内容 revision r1/r2/r3。
 
-领导审核框架：
+领导框架审核：继续使用三页 Google Drive 原始高清图，默认三页完整同屏，单页适屏，主动 1:1 才滚动看细节。
 
-- 始终使用该框架版本 P1/P2/P3 的 Google Drive 原始高清图；
-- 默认三页完整同屏；
-- 可以单页适屏和主动 1:1 看细节。
+需求方内容验收：展示当前完整 `page_manifest` 组成的 P1/P2/P3，用户无需关心某页是母版复用还是新 generation。
 
-需求方内容验收：
+## 16. API / Action 设计
 
-- 展示当前 revision 的完整三页结果；
-- 未变化页面可以来自母版，变化页面来自新 generation；
-- 用户看到的是完整版本，不需要理解页面内部是否复用。
+在现有 UAT AI 后端增加明确动作，不把生图隐藏在状态变化里。
 
-## 16. 现有系统兼容策略
+### 16.1 `generate_framework_revision`
 
-### 16.1 复用
+由“提交调整要求，重新生成框架”按钮调用。
+
+输入：
+
+```json
+{
+  "task_id": "TK-0001",
+  "requester_direction": "...",
+  "refresh_tencent_doc": true,
+  "supplemental_content": "...",
+  "idempotency_key": "..."
+}
+```
+
+后端先持久化 adjustment，再生成。没有 `requester_direction` 必须拒绝。
+
+### 16.2 `check_content_update`
+
+只刷新 sources/snapshots、返回 hash 和差异摘要，0 次生图。
+
+### 16.3 `prepare_content_revision`
+
+保存系统内文字、建立 revision、固定 page schema 下计算 diff / affected pages / capacity，0 次生图。
+
+### 16.4 `generate_content_revision`
+
+输入必须包含 `revision_id + idempotency_key`。仅生成 affected pages，使用 approved template pages 强参考。全部页面 manifest 完整后 task → `reviewing`。
+
+### 16.5 `accept_current_revision`
+
+直接完成任务，0 次生图。
+
+## 17. RLS / 权限门禁
+
+- `uat_framework_templates`：需求方和领导可读；只有受控服务端可以创建；需求方不可 update/delete。
+- `uat_framework_adjustments`：只有任务需求方可创建自己任务的记录；AI/服务端可读并消费；领导可读。
+- `uat_content_revisions`：只有任务需求方可创建 revision；生成状态和 generation 绑定由服务端更新。
+- `generate_framework_revision` 必须验证当前 task 为 `rejected` 且最新正式动作为 `reject_framework`。
+- `generate_content_revision` 必须验证母版已经存在且 task 属于母版通过后的 revision 流程。
+- 母版通过后任何接口都不能让需求方回到 framework generation。
+
+## 18. 现有系统兼容与必须移除的旧行为
 
 复用：
 
@@ -527,204 +556,110 @@ TK-0001/
 - `uat_source_snapshots`
 - `uat_requirement_analyses`
 - `uat_design_generations`
-- Google Drive relay/archive
-- 现有领导 `pending_approval` 审批 UI
-- 现有需求方 `reviewing → completed` 验收闭环
+- Google Drive archive/preview relay
+- 现有 `pending_approval` 领导审批 UI
+- 现有 `reviewing → completed` 需求方验收闭环
 
-### 16.2 新增
+必须禁用或重构：
 
-新增：
+- `confirm_understanding` 自动触发 Demo 的旧行为；
+- `executeAnalysis()` 理解完成后自动 `runDemoGeneration()` 的旧行为；
+- 领导通过后自动生成 final 的旧路径；
+- 任何由 `processing` 单一状态驱动的整页轮询；
+- 任何检测到 source stale 后自动调用 Seedream 的行为。
 
-- `uat_framework_templates`
-- `uat_content_revisions`
-- 框架驳回后的需求方“本轮框架调整要求”模块
-- 领导通过后的“双入口”需求方操作区
-- 内容差异计算器
-- 页面级复用决策
-- `seedream-template-revision-v1` Prompt
-- 母版强参考生成路径
+## 19. 错误处理
 
-### 16.3 必须移除/禁止的旧行为
+### 腾讯文档读取失败
 
-- `confirm_understanding` 自动触发 Demo 生成的旧路径必须被重新审视并改成符合明确用户授权的门禁。
-- `executeAnalysis()` 在理解完成后自动 `runDemoGeneration()` 的行为不能用于后续正式流程。
-- 任何旧 `processing` 状态驱动的自动全页轮询不得重新引入。
-- 任何“领导通过后自动生成 final”的旧路径不得在本流程启用。
+保留上一快照，提示错误，不认为内容已更新，不生成。
 
-## 17. API / Action 设计
+### 内容没有变化
 
-建议在现有 `uat-ai-design` 中新增明确动作，而不是隐藏在状态变化里自动触发。
+不创建 generation，提示可以直接验收当前版本。
 
-### 17.1 框架阶段
+### generation 失败
 
-`submit_framework_adjustment`
-
-输入：
-
-```json
-{
-  "task_id": "TK-0001",
-  "requester_direction": "...",
-  "refresh_tencent_doc": true,
-  "supplemental_content": "..."
-}
-```
-
-该动作只保存调整请求、刷新资料、准备新分析，不调用生成。
-
-`generate_framework_revision`
-
-输入：
-
-```json
-{
-  "task_id": "TK-0001",
-  "adjustment_id": "...",
-  "idempotency_key": "..."
-}
-```
-
-只有需求方点击明确生成按钮后调用。
-
-### 17.2 母版通过后
-
-`check_content_update`
-
-- 只刷新 sources/snapshots；
-- 返回 hash 是否变化和差异摘要；
-- 不生图。
-
-`submit_content_revision`
-
-- 保存系统内更新文字；
-- 建 revision draft；
-- 计算 affected pages / capacity；
-- 不生图。
-
-`generate_content_revision`
-
-- 必须显式提供 revision id + idempotency key；
-- 只生成 affected pages；
-- 使用 approved template pages 作为强输入；
-- 完成后 task → `reviewing`。
-
-`accept_current_revision`
-
-- 直接 `complete`；
-- 不生成。
-
-## 18. 错误处理
-
-### 18.1 腾讯文档无法读取
-
-- 保留上一份快照；
-- 不认为内容已更新；
-- 提示权限/读取错误；
-- 不生成。
-
-### 18.2 内容没有变化
-
-- 不创建 generation；
-- 提示“未检测到内容变化，可直接验收当前版本”。
-
-### 18.3 生成失败
-
-- 当前 revision 状态标记 `failed`；
+- revision 标记 failed；
 - 不破坏上一版可验收结果；
 - 不自动付费重试；
-- 用户可以明确点击重新尝试，新的尝试使用新的 idempotency key，并保留失败记录。
+- 用户主动重试时创建新的 idempotency key 并保留失败记录。
 
-### 18.4 部分页面生成成功
+### 部分页面成功
 
-- 保存已经成功页面；
-- 未完成页面保持失败/待重试；
-- 不把 task 提前进入可验收状态，直到 revision manifest 完整。
+保存成功页面，但在完整 page manifest 形成前 task 不进入 `reviewing`。
 
-## 19. 迁移 TK-0001
+## 20. TK-0001 迁移
 
-当前 TK-0001 已存在：
+当前 TK-0001 已有领导批准的框架 v-1、P1/P2/P3 Drive file ids、v9 confirmed analysis。
 
-- 已通过的框架版本 v-1；
-- 领导 `approve_framework`；
-- P1/P2/P3 Drive file ids；
-- v9 confirmed analysis。
+迁移必须：
 
-迁移时应：
-
-1. 从 `submit_framework v-1 + approve_framework` 建立一条 `uat_framework_templates` 记录；
-2. 将现有三个 ready generation 绑定为母版 pages；
-3. 不产生任何 Seedream 调用；
+1. 从现有 `submit_framework v-1 + approve_framework` 建立 `uat_framework_templates`；
+2. 绑定现有三个 ready generation 为母版 pages；
+3. 0 次 Seedream；
 4. task 从当前 `processing` 修正为 `reviewing`；
-5. 需求方立即看到：
-   - `确认验收并完结`
-   - `内容需要调整`
+5. 需求方立即看到 `确认验收并完结` 与 `内容需要调整`；
 6. 不重复找领导审批。
 
-## 20. 测试要求
-
-### 20.1 状态测试
+## 21. 测试要求
 
 必须覆盖：
 
-- 框架驳回后 AI 不自动生成；
-- 需求方未填写调整要求不能进入下一轮；
-- 需求方提交调整要求后仍不自动付费生成；
-- 只有显式生成动作才创建 generation；
-- 领导通过后 task 进入 `reviewing`；
-- 直接验收不会新增 generation；
-- 内容修改后不再进入 `pending_approval`。
+### 框架循环
 
-### 20.2 母版测试
+- 领导驳回后 0 次生成；
+- 没有 requester_direction 不能生成；
+- 明确点击后只创建一轮框架 generation；
+- 新框架再次进入 pending_approval；
+- 可多轮重复直到领导通过。
 
-必须覆盖：
+### 母版
 
-- 一个 task 只有一个有效母版；
-- 母版指向领导实际批准的框架版本；
-- 后续 revision 引用母版，不改变 template id；
-- 需求方没有修改母版的 API 权限。
+- 一个 task 只有一个有效 template；
+- template 指向领导实际批准版本；
+- 需求方无法修改 template；
+- 领导通过后直接 task → reviewing 且 0 次 final generation。
 
-### 20.3 内容差异测试
+### 内容差异
 
-必须覆盖：
-
-- hash 无变化 → 不生成；
+- hash 无变化 → 0 次生成；
 - P2 单页变化 → 只生成 P2；
-- P1/P3 复用 Drive file id；
-- 页面数量变化 → capacity conflict；
-- 系统内文字、腾讯文档、combined 三种 source mode。
+- P1/P3 Drive id 复用；
+- page_count/page_role 变化 → capacity_conflict；
+- tencent_doc/system_text/combined 三种 source mode。
 
-### 20.4 Prompt/输入测试
+### Prompt / 模型输入
 
-必须覆盖：
+- revision prompt 不含“重新建立视觉概念”等第一轮创作指令；
+- affected page 的第一视觉锚点是 approved template page；
+- Logo/IP 原始资产继续传入；
+- template 优先级高于外部 style reference。
 
-- revision Prompt 不出现“重新设计视觉概念”等第一轮创作指令；
-- 每个 affected page 第一视觉锚点是 approved template page；
-- 原始 Logo/IP 资产仍被传入；
-- 母版优先级高于外部 style reference。
+### 计费安全
 
-### 20.5 计费安全测试
+以下动作断言 provider POST = 0：
 
-必须覆盖：
+- reject_framework
+- check_content_update
+- prepare_content_revision
+- accept_current_revision
+- capacity_conflict
 
-- `check_content_update` 0 次 provider POST；
-- `submit_content_revision` 0 次 provider POST；
-- `accept_current_revision` 0 次 provider POST；
-- `reject_framework` 0 次 provider POST；
-- provider 状态不确定时无自动付费重试。
+provider 状态不确定时断言无自动付费重试。
 
-## 21. 验收标准
+## 22. 最终验收标准
 
-该功能完成后必须满足：
-
-1. 领导可以反复驳回框架，但每次驳回都先回需求方，不会 AI 自动重画。
-2. 需求方必须把与领导沟通后的明确调整方向提交给 AI，才允许下一轮框架生成。
-3. 框架一旦通过就永久成为该需求设计母版，需求方无法改风格方向。
-4. 内容没变时，需求方可以直接把领导批准 Demo 验收成最终交付，完全不生图。
-5. 内容变化时，系统支持腾讯文档和系统内文字两种更新来源。
-6. 内容变化不会自动触发生图，只有需求方明确点击生成按钮才调用 Seedream。
-7. 每轮内容修改都强制参考领导批准母版，不能发生明显风格漂移。
-8. 未变化页面直接复用，只有受影响页面重新生成。
-9. 内容装不下时系统要求需求方调整内容，不允许 AI 偷换框架。
-10. 后续内容修改不再找领导，直接进入需求方验收。
-11. 高清原图继续在 Google Drive，Supabase 只保存结构化事实和引用。
-12. 全流程保留历史版本、审批意见、内容修订记录和 generation 追溯关系。
+1. 框架不过时严格循环 `AI → 领导 → 需求方 → AI → 领导`。
+2. 领导驳回后 AI 不会自行重画。
+3. 需求方必须提交和领导沟通后的明确调整要求才能产生下一版框架。
+4. 框架一旦通过就永久锁定为唯一母版，需求方无权改变设计方向。
+5. 内容没变时可以直接验收已通过 Demo，完全不生图。
+6. 内容变化支持腾讯文档和系统内文字两种来源。
+7. 内容检测不自动生图；只有需求方明确点击生成按钮才调用 Seedream。
+8. 后续每轮都强制回锚母版，页面职责、页数、整体视觉方向不漂移。
+9. 未变化页面复用，只生成受影响页面。
+10. 内容超出框架容量时要求需求方调整内容，AI 不得偷换框架。
+11. 后续内容修改不再经过领导，直接给需求方验收。
+12. 高清原图继续在 Google Drive，Supabase 只保存结构化事实和引用。
+13. 全流程可追溯：框架版本、领导意见、需求方调整要求、母版、内容 revision、generation 和最终验收均有明确关联。
