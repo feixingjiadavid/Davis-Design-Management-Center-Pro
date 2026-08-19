@@ -131,6 +131,10 @@ export const generateContentRevision = (supabase, taskId, revisionId) => invokeA
   revision_id: revisionId,
   idempotency_key: newIdempotencyKey(),
 });
+export const submitContentRevisionRequest = (supabase, taskId, payload = {}) => invokeAiAction(supabase, taskId, 'submit_content_revision_request', {
+  ...payload,
+  idempotency_key: payload.idempotency_key || newIdempotencyKey(),
+});
 export const acceptCurrentRevision = (supabase, taskId) => invokeAiAction(supabase, taskId, 'accept_current_revision');
 
 export async function startAutomaticAnalysis(supabase, taskId) {

@@ -7,6 +7,12 @@ export function latestFormalAction(history = []) {
   return null;
 }
 
+export function buildRequesterRevisionRequest(feedback = '', refreshTencentDoc = false) {
+  const requester_feedback = String(feedback || '').trim();
+  if (!requester_feedback) throw new Error('REQUESTER_REVISION_FEEDBACK_REQUIRED');
+  return { requester_feedback, refresh_tencent_doc: Boolean(refreshTencentDoc) };
+}
+
 export function selectRequesterFlowState({ task = {}, template = null, revisions = [], history = [] } = {}) {
   const status = String(task.status || '');
   const latest = [...(revisions || [])].sort((a, b) => Number(b.revision_no || 0) - Number(a.revision_no || 0))[0] || null;
