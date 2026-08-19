@@ -66,11 +66,15 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 
-  // AI 工作台使用 v8 图库；需求方不再使用它，避免与聊天区重绘竞争。
   if (page === 'ai-designer-workspace.html') {
     import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
       .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
       .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
+
+    // 只补正式流程展示，不新增状态：Demo -> 领导审核框架 -> 成品 -> 测试验收。
+    import('./js/ai-formal-pipeline-v1.js?v=ai-formal-pipeline-v1')
+      .then(module => module.bootstrapAiFormalPipeline(supabase))
+      .catch(error => console.error('AI 正式流程条加载失败:', error));
   }
 
   // 需求详情页：Demo 仅查看。3/3 完成后由数据库流程自动进入正式 pending_approval，只有领导能审批。
@@ -80,8 +84,12 @@ if (typeof window !== 'undefined') {
       .catch(error => console.error('框架方案只读预览加载失败:', error));
   }
 
-  // 正式管理端复用既有框架审批详情页，不再跳向不存在的第二套审批页面。
+  // 正式管理端：复用既有管理台与审批页，只修静默轮询不重绘和旧审批路由。
   if (page === 'manager-workspace.html') {
+    import('./js/manager-formal-sync-v2.js?v=manager-formal-sync-v2')
+      .then(module => module.bootstrapManagerFormalSync(supabase))
+      .catch(error => console.error('正式管理台数据同步修复失败:', error));
+
     import('./js/formal-framework-approval-route.js?v=formal-framework-approval-v1')
       .then(module => module.bootstrapFormalFrameworkApprovalRoute())
       .catch(error => console.error('正式框架审批入口修复失败:', error));
