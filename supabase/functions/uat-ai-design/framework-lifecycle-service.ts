@@ -1,0 +1,106 @@
+import { assertFrameworkCanBeApproved, assertFrameworkCanBeRejected, latestSubmittedFramework, validateTemplatePages } from './framework-template-core.ts';
+
+export type WorkflowActor = { id: string; email?: string; label: string };
+
+function parseHistory(task: any) {
+  try {
+    const history = JSON.parse(String(task?.history_json || '[]'));
+    return Array.isArray(history) ? history : [];
+  } catch {
+    return [];
+  }
+}
+
+function outputOf(row: any) {
+  if (row?.output && typeof row.output === 'object') return row.output;
+  try { return JSON.parse(String(row?.output || '{}')); } catch { return {}; }
+}
+
+export async function rejectFramework(admin: any, taskId: string, actor: WorkflowActor, reason = '') {
+  const taskResult = await admin.from('test_tasks').select('*').eq('id', taskId).single();
+  if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
+  const task = taskResult.data;
+  const history = parseHistory(task);
+  assertFrameworkCanBeRejected(task, history);
+  const submitted = latestSubmittedFramework(history);
+  const reply = String(reason || '').trim() || '框架方向不合适，请需求方与领导沟通后补充明确调整要求。';
+  history.push({
+    action: 'reject_framework', version: String(submitted?.version || ''), reply,
+    operator: actor.label, reply_by: actor.label, is_rejected: true, time: new Date().toISOString(),
+  });
+  const updated = await admin.from('test_tasks').update({
+    status: 'rejected',
+    summary_desc: `领导驳回框架：${reply}`,
+    history_json: JSON.stringify(history),
+  }).eq('id', taskId).select('*').single();
+  if (updated.error) throw updated.error;
+  return { task: updated.data, submitted };
+}
+
+export async function approveFramework(admin: any, taskId: string, actor: WorkflowActor, note = '') {
+  const taskResult = await admin.from('test_tasks').select('*').eq('id', taskId).single();
+  if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
+  const task = taskResult.data;
+  const history = parseHistory(task);
+  assertFrameworkCanBeApproved(task, history);
+  const existing = await admin.from('uat_framework_templates').select('id').eq('task_id', taskId).maybeSingle();
+  if (existing.data) throw new Error('FRAMEWORK_TEMPLATE_ALREADY_LOCKED');
+
+  const submitted: any = latestSubmittedFramework(history);
+  const generationIds = Array.isArray(submitted?.ai_demo_generation_ids)
+    ? submitted.ai_demo_generation_ids.map(String).filter(Boolean)
+    : [];
+  if (!generationIds.length) throw new Error('APPROVED_FRAMEWORK_GENERATIONS_REQUIRED');
+
+  const result = await admin.from('uat_design_generations').select('*').eq('task_id', taskId).in('id', generationIds);
+  if (result.error) throw result.error;
+  const generations = (result.data || []).filter((row: any) => ['ready', 'confirmed'].includes(String(row.status)));
+  if (generations.length !== generationIds.length) throw new Error('APPROVED_FRAMEWORK_GENERATIONS_NOT_READY');
+
+  const pages = validateTemplatePages(generations
+    .sort((a: any, b: any) => Number(a.page_index) - Number(b.page_index))
+    .map((row: any) => {
+      const output = outputOf(row);
+      return {
+        page_index: Number(row.page_index),
+        page_title: String(output.page_title || `P${row.page_index}`),
+        generation_id: row.id,
+        drive_file_id: String(output.drive_file_id || ''),
+        drive_url: String(output.drive_url || output.image_url || ''),
+        exact_copy: Array.isArray(output.exact_copy) ? output.exact_copy.map(String) : [],
+      };
+    }));
+
+  const first = outputOf(generations[0]);
+  const width = Number(first?.size?.width || 1242);
+  const height = Number(first?.size?.height || 1660);
+  const approvalNote = String(note || '').trim();
+  const inserted = await admin.from('uat_framework_templates').insert({
+    task_id: taskId,
+    framework_version: String(submitted.version || 'v-1'),
+    analysis_id: submitted.ai_analysis_id || generations[0]?.analysis_id || null,
+    approved_by: actor.id,
+    approved_by_label: actor.label,
+    approved_at: new Date().toISOString(),
+    approval_note: approvalNote || null,
+    page_count: pages.length,
+    width,
+    height,
+    source_content_hash: submitted.source_content_hash || null,
+    pages,
+  }).select('*').single();
+  if (inserted.error) throw inserted.error;
+
+  history.push({
+    action: 'approve_framework', version: String(submitted.version || ''), operator: actor.label,
+    reply: approvalNote || '确认方向无误', is_rejected: false, reply_by: actor.label,
+    time: new Date().toISOString(), template_id: inserted.data.id,
+  });
+  const updated = await admin.from('test_tasks').update({
+    status: 'reviewing',
+    summary_desc: '领导框架已通过，等待需求方验收或提交内容更新',
+    history_json: JSON.stringify(history),
+  }).eq('id', taskId).select('*').single();
+  if (updated.error) throw updated.error;
+  return { task: updated.data, template: inserted.data };
+}
