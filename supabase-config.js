@@ -41,6 +41,7 @@ export const supabase = sdk.createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
   window.__davisSupabaseSdkSource = sdk.source;
+  const page = location.pathname.split('/').pop() || 'index.html';
 
   import('./js/index-lifecycle-recovery.js?v=uat-index-lifecycle-v1')
     .catch(error => console.error('需求大厅生命周期恢复模块加载失败:', error));
@@ -59,15 +60,24 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
-  // Demo v7：数据库队列状态是唯一真源；Google Drive 私有文件统一走共享鉴权预览客户端。
+  // AI 设计师工作台：数据库队列状态是唯一真源，Drive 私有文件通过鉴权 Relay 预览。
   import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7c')
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 
-  // v8：需求方 DOM 重建后必须重新填充 Drive 预览；只有全部 Demo 真正可见后才允许确认。
-  import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
-    .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
-    .catch(error => console.error('Seedream Drive 统一预览层加载失败:', error));
+  // AI 工作台使用 v8 图库；需求方不再使用它，避免与聊天区重绘竞争。
+  if (page === 'ai-designer-workspace.html') {
+    import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
+      .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
+      .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
+  }
+
+  // 需求方固定 Demo 验收区：作为 ai-requirement-panel 的兄弟节点，不会被聊天内容重绘删除。
+  if (page === 'task-detail-requester.html') {
+    import('./js/requester-demo-review-v10.js?v=requester-demo-review-v10')
+      .then(module => module.bootstrapRequesterDemoReviewV10(supabase))
+      .catch(error => console.error('需求方 Demo 验收区加载失败:', error));
+  }
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
