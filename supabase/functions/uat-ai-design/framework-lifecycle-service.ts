@@ -16,6 +16,17 @@ function outputOf(row: any) {
   try { return JSON.parse(String(row?.output || '{}')); } catch { return {}; }
 }
 
+async function currentSourceHash(admin: any, task: any) {
+  let query = admin.from('uat_requirement_sources').select('*').eq('task_id', task.id).eq('status', 'ready');
+  const link = String(task.link || '').trim();
+  if (link) query = query.eq('source_type', 'tencent_doc').eq('source_url', link);
+  else query = query.eq('source_type', 'form_fields');
+  const source = (await query.order('updated_at', { ascending: false }).limit(1).maybeSingle()).data;
+  if (!source?.current_snapshot_id) return '';
+  const snapshot = (await admin.from('uat_source_snapshots').select('content_sha256').eq('id', source.current_snapshot_id).single()).data;
+  return String(snapshot?.content_sha256 || '');
+}
+
 export async function rejectFramework(admin: any, taskId: string, actor: WorkflowActor, reason = '') {
   const taskResult = await admin.from('test_tasks').select('*').eq('id', taskId).single();
   if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
@@ -75,6 +86,7 @@ export async function approveFramework(admin: any, taskId: string, actor: Workfl
   const width = Number(first?.size?.width || 1242);
   const height = Number(first?.size?.height || 1660);
   const approvalNote = String(note || '').trim();
+  const sourceHash = String(submitted.source_content_hash || await currentSourceHash(admin, task) || '');
   const inserted = await admin.from('uat_framework_templates').insert({
     task_id: taskId,
     framework_version: String(submitted.version || 'v-1'),
@@ -86,7 +98,7 @@ export async function approveFramework(admin: any, taskId: string, actor: Workfl
     page_count: pages.length,
     width,
     height,
-    source_content_hash: submitted.source_content_hash || null,
+    source_content_hash: sourceHash || null,
     pages,
   }).select('*').single();
   if (inserted.error) throw inserted.error;
