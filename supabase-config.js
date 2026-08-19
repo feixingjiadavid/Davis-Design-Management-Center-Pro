@@ -66,13 +66,6 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 
-  // 框架版本正式记录：3 张 Drive Demo 自动合成轻量封面，仅封面进入私有 Supabase Storage。
-  if (page === 'ai-designer-workspace.html' || page === 'task-detail-requester.html') {
-    import('./js/framework-version-preview-sync-v1.js?v=framework-version-preview-v1b')
-      .then(module => module.bootstrapFrameworkVersionPreviewSync(supabase))
-      .catch(error => console.error('框架历史版本封面同步失败:', error));
-  }
-
   if (page === 'ai-designer-workspace.html') {
     import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
       .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
@@ -89,6 +82,11 @@ if (typeof window !== 'undefined') {
     import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
+
+    // 正式框架审核直接查看 Google Drive 原始高清图，不再依赖 Supabase 低清拼图。
+    import('./js/framework-hd-review-v1.js?v=framework-hd-review-v1')
+      .then(module => module.bootstrapFrameworkHdReview(supabase))
+      .catch(error => console.error('高清框架审核视图加载失败:', error));
   }
 
   // 正式管理端：复用既有管理台与审批页，只修静默轮询不重绘和旧审批路由。
