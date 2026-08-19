@@ -1,4 +1,4 @@
-import { DEMO_MODEL, DEMO_VERSION, getDrivePreviewObjectUrl, selectCurrentDemoPages } from './seedream-drive-preview-client.mjs?v=requester-demo-view-v12';
+import { DEMO_MODEL, DEMO_VERSION, getDrivePreviewObjectUrl, selectCurrentDemoPages } from './seedream-drive-preview-client.mjs?v=requester-demo-view-v12b';
 
 let supabase = null;
 let taskId = '';
@@ -13,7 +13,33 @@ function currentTaskId() {
   return String(new URLSearchParams(location.search).get('id') || '').trim();
 }
 
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem('activeUserObj') || '{}'); } catch { return {}; }
+}
+
+function isLeaderView() {
+  const user = currentUser();
+  return String(user.enName || '').toLowerCase() === 'judyzzhang' || String(user.account_type || '').toLowerCase() === 'uat_leader';
+}
+
+function ensureReadOnlyCss() {
+  if (document.getElementById('requester-demo-readonly-css-v12')) return;
+  const style = document.createElement('style');
+  style.id = 'requester-demo-readonly-css-v12';
+  style.textContent = `
+    button[onclick*="confirmAiDemo"],
+    [data-v8-confirm-demo],
+    [data-requester-confirm-demo],
+    [data-confirm-initial-draft] { display: none !important; }
+    #requester-demo-review-v10,
+    #requester-demo-review-v11,
+    #requester-drive-demo-gallery-v7 { display: none !important; }
+  `;
+  document.head.appendChild(style);
+}
+
 function hideLegacyDemoBlocks() {
+  ensureReadOnlyCss();
   const ids = ['requester-demo-review-v10', 'requester-demo-review-v11', 'requester-drive-demo-gallery-v7'];
   ids.forEach((id) => {
     const node = document.getElementById(id);
@@ -102,11 +128,14 @@ function statusCopy(status) {
 function renderShell(host, task, rows) {
   const ready = readyRows(rows);
   const total = totalPages(rows);
+  const subtitle = isLeaderView()
+    ? '领导审批视角：请查看框架方案，并使用右侧正式审批面板通过或驳回。'
+    : '需求方查看视角：此阶段仅查看框架方案，不参与审批。';
   host.innerHTML = `
     <div class="flex items-start justify-between gap-4 mb-5">
       <div>
         <h3 class="text-base font-bold text-white">框架方案（Demo）</h3>
-        <p class="text-xs text-zinc-500 mt-1">需求方仅查看；框架方案由领导按正式流程审批。</p>
+        <p class="text-xs text-zinc-500 mt-1">${esc(subtitle)}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="text-xs px-2.5 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">${ready.length}/${total} 已归档</span>
@@ -187,6 +216,7 @@ export function bootstrapRequesterDemoViewV12(client) {
   window.__requesterDemoViewV12Started = true;
   supabase = client;
   taskId = currentTaskId();
+  ensureReadOnlyCss();
   hideLegacyDemoBlocks();
   sync(true);
   timer = setInterval(() => sync(false), 5000);
