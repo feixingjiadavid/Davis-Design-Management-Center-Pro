@@ -83,6 +83,11 @@ if (typeof window !== 'undefined') {
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
 
+    // 旧详情页把所有 processing 都当成“AI 正在重新理解”，每 2 秒重绘整页；这里接管为 AI 局部刷新。
+    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v1')
+      .then(module => module.bootstrapRequesterAiStabilityV1())
+      .catch(error => console.error('需求详情稳定性修复加载失败:', error));
+
     // 正式框架审核默认三页完整同屏；单页也先完整适屏，只有主动 1:1 才允许滚动看细节。
     import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
       .then(module => module.bootstrapFrameworkHdReview(supabase))
