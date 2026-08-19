@@ -169,18 +169,18 @@
     </div>
 
     <script type="module">
-        import { supabase } from './supabase-config.js?v=requester-drive-preview-v9';
-        import * as aiRequirementClient from './js/ai-requirement-client.js?v=requester-drive-preview-v9';
-        import * as aiClarificationChat from './js/ai-clarification-chat.js?v=requester-drive-preview-v9';
-        import { bootstrapSeedreamDrivePreviewUIV7 } from './js/seedream-drive-preview-ui-v7.js?v=requester-drive-preview-v9';
+        import { supabase } from './supabase-config.js?v=requester-drive-preview-v10';
+        import * as aiRequirementClient from './js/ai-requirement-client.js?v=requester-drive-preview-v10';
+        import * as aiClarificationChat from './js/ai-clarification-chat.js?v=requester-drive-preview-v10';
+        import { bootstrapRequesterDemoReviewV10 } from './js/requester-demo-review-v10.js?v=requester-drive-preview-v10';
         window.supabase = supabase;
         window.aiRequirementClient = aiRequirementClient;
         window.aiClarificationChat = aiClarificationChat;
         window.DB_TABLE = 'test_tasks';
-        bootstrapSeedreamDrivePreviewUIV7(supabase);
+        bootstrapRequesterDemoReviewV10(supabase);
         if(window.initApp) window.initApp();
     </script>
-    <script src="./js/common.js?v=requester-drive-preview-v9"></script>
-    <script src="./js/task-detail-requester.js?v=requester-drive-preview-v9"></script>
+    <script src="./js/common.js?v=requester-drive-preview-v10"></script>
+    <script src="./js/task-detail-requester.js?v=requester-drive-preview-v10"></script>
 </body>
 </html>
