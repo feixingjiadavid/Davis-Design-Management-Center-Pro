@@ -64,8 +64,8 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 
-  // 设计师工作台与需求方详情页统一使用同一套 Drive 预览，隐藏旧 image_url / thumbnail 渲染器。
-  import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v7c')
+  // v8：需求方 DOM 重建后必须重新填充 Drive 预览；只有全部 Demo 真正可见后才允许确认。
+  import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
     .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
     .catch(error => console.error('Seedream Drive 统一预览层加载失败:', error));
 }
