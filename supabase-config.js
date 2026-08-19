@@ -68,7 +68,7 @@ if (typeof window !== 'undefined') {
 
   // 框架版本正式记录：3 张 Drive Demo 自动合成轻量封面，仅封面进入私有 Supabase Storage。
   if (page === 'ai-designer-workspace.html' || page === 'task-detail-requester.html') {
-    import('./js/framework-version-preview-sync-v1.js?v=framework-version-preview-v1')
+    import('./js/framework-version-preview-sync-v1.js?v=framework-version-preview-v1b')
       .then(module => module.bootstrapFrameworkVersionPreviewSync(supabase))
       .catch(error => console.error('框架历史版本封面同步失败:', error));
   }
