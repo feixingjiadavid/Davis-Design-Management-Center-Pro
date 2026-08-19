@@ -17,25 +17,37 @@ function currentUser() {
   try { return JSON.parse(localStorage.getItem('activeUserObj') || '{}'); } catch { return {}; }
 }
 
+function hideStaleRenderer() {
+  const stale = document.getElementById('requester-demo-review-v10');
+  if (stale) {
+    stale.style.display = 'none';
+    stale.setAttribute('aria-hidden', 'true');
+  }
+}
+
 function removeLegacyDemoUI() {
   const content = document.getElementById('ai-requirement-content');
-  if (!content) return;
-  content.querySelectorAll('button[onclick*="confirmAiDemo"], [data-v8-confirm-demo], [data-requester-confirm-demo]').forEach((node) => node.remove());
-  const old = document.getElementById('requester-drive-demo-gallery-v7');
-  if (old) old.style.display = 'none';
-  [...content.querySelectorAll('p')].filter((p) => p.textContent?.trim() === 'Demo 版本').forEach((p) => {
-    const block = p.parentElement;
-    if (block) block.style.display = 'none';
-  });
+  if (content) {
+    content.querySelectorAll('button[onclick*="confirmAiDemo"], [data-v8-confirm-demo], [data-requester-confirm-demo]').forEach((node) => node.remove());
+    const old = document.getElementById('requester-drive-demo-gallery-v7');
+    if (old) old.style.display = 'none';
+    [...content.querySelectorAll('p')].filter((p) => p.textContent?.trim() === 'Demo 版本').forEach((p) => {
+      const block = p.parentElement;
+      if (block) block.style.display = 'none';
+    });
+  }
+  hideStaleRenderer();
 }
 
 function ensureHost() {
   const anchor = document.getElementById('ai-requirement-panel');
   if (!anchor) return null;
-  let host = document.getElementById('requester-demo-review-v10');
+  hideStaleRenderer();
+  let host = document.getElementById('requester-demo-review-v11');
   if (host) return host;
   host = document.createElement('section');
-  host.id = 'requester-demo-review-v10';
+  host.id = 'requester-demo-review-v11';
+  host.dataset.stableVersion = '11';
   host.className = 'bg-[#121217] border border-emerald-500/20 rounded-2xl p-7 relative overflow-hidden';
   anchor.insertAdjacentElement('afterend', host);
   return host;
