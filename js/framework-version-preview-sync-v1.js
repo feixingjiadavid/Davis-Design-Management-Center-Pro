@@ -4,7 +4,7 @@ import { getDrivePreviewObjectUrl } from './seedream-drive-preview-client.mjs?v=
 let client=null;
 let busy=false;
 let timer=null;
-let currentObjectUrl='';
+const previewObjectUrls=new Map();
 
 const pageName=()=>location.pathname.split('/').pop()||'';
 const taskIdForPage=()=>{
@@ -36,44 +36,40 @@ function canvasBlob(canvas,quality){
 
 async function composePreview(driveFileIds){
   const urls=[];
-  try{
-    for(const id of driveFileIds.slice(0,3))urls.push(await getDrivePreviewObjectUrl(client,id));
-    const images=await Promise.all(urls.map(loadImage));
-    const canvas=document.createElement('canvas');
-    canvas.width=1200;
-    canvas.height=720;
-    const ctx=canvas.getContext('2d');
-    if(!ctx)throw new Error('FRAMEWORK_PREVIEW_CANVAS_UNAVAILABLE');
-    ctx.fillStyle='#09090b';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle='#f8fafc';
-    ctx.font='700 28px Inter, Arial, sans-serif';
-    ctx.fillText('框架方案 · 3页总览',32,42);
-    ctx.fillStyle='#94a3b8';
-    ctx.font='500 15px Inter, Arial, sans-serif';
-    ctx.fillText('P1 / P2 / P3',32,66);
+  for(const id of driveFileIds.slice(0,3))urls.push(await getDrivePreviewObjectUrl(client,id));
+  const images=await Promise.all(urls.map(loadImage));
+  const canvas=document.createElement('canvas');
+  canvas.width=1200;
+  canvas.height=720;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)throw new Error('FRAMEWORK_PREVIEW_CANVAS_UNAVAILABLE');
+  ctx.fillStyle='#09090b';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#f8fafc';
+  ctx.font='700 28px Inter, Arial, sans-serif';
+  ctx.fillText('框架方案 · 3页总览',32,42);
+  ctx.fillStyle='#94a3b8';
+  ctx.font='500 15px Inter, Arial, sans-serif';
+  ctx.fillText('P1 / P2 / P3',32,66);
 
-    const gap=22;
-    const top=88;
-    const bottom=24;
-    const cardW=(canvas.width-gap*4)/3;
-    const cardH=canvas.height-top-bottom;
-    images.forEach((img,index)=>{
-      const x=gap+(cardW+gap)*index;
-      ctx.fillStyle='#111827';
-      ctx.fillRect(x,top,cardW,cardH);
-      ctx.fillStyle='#e5e7eb';
-      ctx.font='700 18px Inter, Arial, sans-serif';
-      ctx.fillText(`P${index+1}`,x+16,top+28);
-      drawContain(ctx,img,x+14,top+42,cardW-28,cardH-56);
-    });
-    let blob=await canvasBlob(canvas,0.82);
-    if(blob.size>1850000)blob=await canvasBlob(canvas,0.68);
-    if(blob.size>2050000)throw new Error('FRAMEWORK_PREVIEW_TOO_LARGE');
-    return blob;
-  }finally{
-    // Drive preview object URLs are owned by the shared cache and intentionally kept alive for page previews.
-  }
+  const gap=22;
+  const top=88;
+  const bottom=24;
+  const cardW=(canvas.width-gap*4)/3;
+  const cardH=canvas.height-top-bottom;
+  images.forEach((img,index)=>{
+    const x=gap+(cardW+gap)*index;
+    ctx.fillStyle='#111827';
+    ctx.fillRect(x,top,cardW,cardH);
+    ctx.fillStyle='#e5e7eb';
+    ctx.font='700 18px Inter, Arial, sans-serif';
+    ctx.fillText(`P${index+1}`,x+16,top+28);
+    drawContain(ctx,img,x+14,top+42,cardW-28,cardH-56);
+  });
+  let blob=await canvasBlob(canvas,0.82);
+  if(blob.size>1850000)blob=await canvasBlob(canvas,0.68);
+  if(blob.size>2050000)throw new Error('FRAMEWORK_PREVIEW_TOO_LARGE');
+  return blob;
 }
 
 function findHistoryCard(version){
@@ -83,17 +79,20 @@ function findHistoryCard(version){
   return cards.find(card=>String(card.textContent||'').includes('框架方案')&&String(card.textContent||'').includes(version))||cards.find(card=>String(card.textContent||'').includes('框架方案'))||null;
 }
 
-function showBlobInHistoryCard(version,blob){
+function showBlobInHistoryCard(version,path,blob){
   const card=findHistoryCard(version);
   if(!card)return false;
   const image=card.querySelector('img');
   if(!image)return false;
-  if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);
-  currentObjectUrl=URL.createObjectURL(blob);
-  image.src=currentObjectUrl;
+  const previous=previewObjectUrls.get(path);
+  if(previous)URL.revokeObjectURL(previous);
+  const objectUrl=URL.createObjectURL(blob);
+  previewObjectUrls.set(path,objectUrl);
+  image.src=objectUrl;
   image.alt=`${version} 框架方案三页总览`;
+  image.dataset.frameworkPreviewPath=path;
   const frame=image.parentElement;
-  if(frame)frame.onclick=()=>typeof window.openPreview==='function'?window.openPreview(currentObjectUrl):window.open(currentObjectUrl,'_blank','noopener');
+  if(frame)frame.onclick=()=>typeof window.openPreview==='function'?window.openPreview(objectUrl):window.open(objectUrl,'_blank','noopener');
   return true;
 }
 
@@ -105,9 +104,18 @@ async function hydrateStoredPreview(version,path){
   if(image.dataset.frameworkPreviewPath===path&&image.src)return true;
   const {data,error}=await client.storage.from(PREVIEW_BUCKET).download(path);
   if(error)throw error;
-  image.dataset.frameworkPreviewPath=path;
-  showBlobInHistoryCard(version,data);
+  showBlobInHistoryCard(version,path,data);
   return true;
+}
+
+async function hydrateAllStoredPreviews(history){
+  for(const item of history){
+    if(item?.action!=='submit_framework')continue;
+    const path=String(item.preview_storage_path||'').trim();
+    if(!path)continue;
+    const version=String(item.version||'v-X');
+    await hydrateStoredPreview(version,path).catch(error=>console.warn('框架历史封面读取失败:',error));
+  }
 }
 
 async function buildAndPersist(taskId,input){
@@ -118,7 +126,7 @@ async function buildAndPersist(taskId,input){
   const {data:patched,error:patchError}=await client.rpc('set_framework_preview_path',{p_task_id:taskId,p_version:input.version,p_preview_path:path});
   if(patchError)throw patchError;
   if(patched!==true)throw new Error('FRAMEWORK_PREVIEW_HISTORY_PATCH_FAILED');
-  showBlobInHistoryCard(input.version,blob);
+  showBlobInHistoryCard(input.version,path,blob);
   window.dispatchEvent(new CustomEvent('framework-preview-ready',{detail:{taskId,version:input.version,path}}));
   return path;
 }
@@ -132,13 +140,9 @@ async function syncOnce(){
     const {data:task,error}=await client.from('test_tasks').select('id,status,history_json').eq('id',taskId).single();
     if(error||!task)return;
     const history=parseHistory(task.history_json);
+    await hydrateAllStoredPreviews(history);
     const input=selectFrameworkPreviewInput(history);
-    if(input.index<0)return;
-    if(input.previewStoragePath){
-      await hydrateStoredPreview(input.version,input.previewStoragePath).catch(error=>console.warn('框架历史封面读取失败:',error));
-      return;
-    }
-    if(!input.needsPreview)return;
+    if(input.index<0||!input.needsPreview)return;
     await buildAndPersist(taskId,input);
   }catch(error){
     console.error('框架历史版本封面自动生成失败:',error);
@@ -159,5 +163,9 @@ export function bootstrapFrameworkVersionPreviewSync(clientInstance){
     if(pageName()==='ai-designer-workspace.html')document.getElementById('taskList')?.addEventListener('click',()=>setTimeout(syncOnce,120),true);
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
-  window.addEventListener('beforeunload',()=>{if(timer)clearInterval(timer);if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl)},{once:true});
+  window.addEventListener('beforeunload',()=>{
+    if(timer)clearInterval(timer);
+    for(const url of previewObjectUrls.values())URL.revokeObjectURL(url);
+    previewObjectUrls.clear();
+  },{once:true});
 }
