@@ -148,12 +148,15 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
   if (!key) throw new Error('IDEMPOTENCY_KEY_REQUIRED');
   const revision = (await admin.from('uat_content_revisions').select('*').eq('id', revisionId).eq('task_id', taskId).single()).data;
   if (!revision) throw new Error('CONTENT_REVISION_NOT_FOUND');
-  if (String(revision.status) !== 'content_ready') throw new Error('CONTENT_REVISION_NOT_READY');
-  const template = (await admin.from('uat_framework_templates').select('*').eq('id', revision.template_id).eq('task_id', taskId).single()).data;
-  if (!template) throw new Error('FRAMEWORK_TEMPLATE_REQUIRED');
 
   const existing = (await admin.from('uat_design_generations').select('*').eq('revision_id', revisionId).in('status', ['queued', 'generating', 'ready'])).data || [];
-  if (existing.length) return { status: 'processing', revision, generations: existing, idempotent: true };
+  if (existing.length && ['content_ready', 'generating'].includes(String(revision.status))) {
+    return { status: 'processing', revision, generations: existing, idempotent: true };
+  }
+  if (String(revision.status) !== 'content_ready') throw new Error('CONTENT_REVISION_NOT_READY');
+
+  const template = (await admin.from('uat_framework_templates').select('*').eq('id', revision.template_id).eq('task_id', taskId).single()).data;
+  if (!template) throw new Error('FRAMEWORK_TEMPLATE_REQUIRED');
 
   const affected = Array.isArray(revision.affected_pages) ? revision.affected_pages.map(Number).filter(Boolean) : [];
   if (!affected.length) throw new Error('AFFECTED_PAGES_REQUIRED');
