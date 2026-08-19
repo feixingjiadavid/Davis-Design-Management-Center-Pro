@@ -1,0 +1,36 @@
+const formalActions = new Set(['submit_framework','reject_framework','framework_adjustment_submitted','approve_framework','content_revision_submitted','submit_draft','complete']);
+
+export function latestFormalAction(history = []) {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (formalActions.has(String(history[index]?.action || ''))) return history[index];
+  }
+  return null;
+}
+
+export function selectRequesterFlowState({ task = {}, template = null, revisions = [], history = [] } = {}) {
+  const status = String(task.status || '');
+  const latest = [...(revisions || [])].sort((a, b) => Number(b.revision_no || 0) - Number(a.revision_no || 0))[0] || null;
+  const formal = latestFormalAction(history || []);
+  if (status === 'completed' || status === 'archived') return { kind: 'completed', latest, formal };
+  if (status === 'rejected' && !template) return { kind: 'framework_rejected_waiting_requester', latest, formal };
+  if (!template) return { kind: 'pre_template', latest, formal };
+  if (latest?.status === 'capacity_conflict') return { kind: 'capacity_conflict', latest, formal };
+  if (latest?.status === 'generating' || (status === 'processing' && latest?.status === 'generation_requested')) return { kind: 'content_revision_generating', latest, formal };
+  if (latest?.status === 'content_ready') return { kind: 'content_revision_draft', latest, formal };
+  if (latest?.status === 'ready_for_review') return { kind: 'content_revision_review', latest, formal };
+  if (status === 'reviewing') return { kind: 'template_review', latest, formal };
+  return { kind: 'template_active', latest, formal };
+}
+
+export function isRequesterUser(user = {}) {
+  const enName = String(user.enName || user.email || '').toLowerCase();
+  const accountType = String(user.account_type || '').toLowerCase();
+  return accountType === 'uat_requester' || enName === 'uat.requester' || enName === 'uat.requester@webank.com';
+}
+
+export function isLeaderUser(user = {}) {
+  const enName = String(user.enName || user.email || '').toLowerCase();
+  const accountType = String(user.account_type || '').toLowerCase();
+  const role = String(user.role || '').toLowerCase();
+  return enName === 'judyzzhang' || enName === 'uat.leader' || enName === 'uat.leader@webank.com' || accountType === 'uat_leader' || role === 'leader';
+}
