@@ -47,7 +47,7 @@ if (typeof window !== 'undefined') {
 
   import('./js/required-design-assets-ui.js?v=uat-assets-v1')
     .then(module => module.bootstrapRequiredDesignAssetsUI(supabase))
-    .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-v2'))
+    .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-drive-v7'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('设计输入模块加载失败:', error));
 
@@ -60,9 +60,14 @@ if (typeof window !== 'undefined') {
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
   // Demo v7：数据库队列状态是唯一真源；Google Drive 私有文件统一走共享鉴权预览客户端。
-  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7')
+  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7c')
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
+
+  // 设计师工作台与需求方详情页统一使用同一套 Drive 预览，隐藏旧 image_url / thumbnail 渲染器。
+  import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v7c')
+    .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
+    .catch(error => console.error('Seedream Drive 统一预览层加载失败:', error));
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
