@@ -83,8 +83,8 @@ if (typeof window !== 'undefined') {
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
 
-    // 正式框架审核直接查看 Google Drive 原始高清图，不再依赖 Supabase 低清拼图。
-    import('./js/framework-hd-review-v1.js?v=framework-hd-review-v1')
+    // 正式框架审核默认三页完整同屏；单页也先完整适屏，只有主动 1:1 才允许滚动看细节。
+    import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
       .then(module => module.bootstrapFrameworkHdReview(supabase))
       .catch(error => console.error('高清框架审核视图加载失败:', error));
   }
