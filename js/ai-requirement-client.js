@@ -12,8 +12,8 @@ export function newIdempotencyKey() {
   return crypto.randomUUID();
 }
 
-export function edgeFunctionForAction(action) {
-  return action === 'generate_final' ? 'uat-seedream-final' : 'uat-ai-design';
+export function edgeFunctionForAction(_action) {
+  return 'uat-ai-design';
 }
 
 export function getRequesterWorkflowState(status) {
@@ -83,10 +83,7 @@ export async function saveVisualReferences(supabase, taskId, references, { repla
     rows.forEach((row, index) => { row.is_primary = index === primaryIndex; });
   }
   if (rows.some(row => row.is_primary)) {
-    const { error: clearError } = await supabase.from('uat_visual_references')
-      .update({ is_primary: false, updated_at: new Date().toISOString() })
-      .eq('task_id', taskId)
-      .eq('is_primary', true);
+    const { error: clearError } = await supabase.from('uat_visual_references').update({ is_primary: false, updated_at: new Date().toISOString() }).eq('task_id', taskId).eq('is_primary', true);
     if (clearError) throw clearError;
   }
   const { data, error } = await supabase.from('uat_visual_references').insert(rows).select('*');
@@ -116,12 +113,25 @@ export async function delegateClarificationsToAi(supabase, taskId, clientRequest
 
 export async function invokeAiAction(supabase, taskId, action, payload = {}) {
   const body = { task_id: taskId, action, ...payload };
-  if (action === 'generate_demo' || action === 'generate_final') body.idempotency_key = payload.idempotency_key || newIdempotencyKey();
   const { data, error } = await supabase.functions.invoke(edgeFunctionForAction(action), { body });
   if (error) throw error;
   if (!data?.ok) throw new Error(data?.error || 'AI 流程执行失败');
   return data;
 }
+
+export const approveFramework = (supabase, taskId, note = '') => invokeAiAction(supabase, taskId, 'approve_framework', { note });
+export const rejectFramework = (supabase, taskId, reason = '') => invokeAiAction(supabase, taskId, 'reject_framework', { reason });
+export const generateFrameworkRevision = (supabase, taskId, payload = {}) => invokeAiAction(supabase, taskId, 'generate_framework_revision', {
+  ...payload,
+  idempotency_key: payload.idempotency_key || newIdempotencyKey(),
+});
+export const checkContentUpdate = (supabase, taskId) => invokeAiAction(supabase, taskId, 'check_content_update');
+export const prepareContentRevision = (supabase, taskId, payload = {}) => invokeAiAction(supabase, taskId, 'prepare_content_revision', payload);
+export const generateContentRevision = (supabase, taskId, revisionId) => invokeAiAction(supabase, taskId, 'generate_content_revision', {
+  revision_id: revisionId,
+  idempotency_key: newIdempotencyKey(),
+});
+export const acceptCurrentRevision = (supabase, taskId) => invokeAiAction(supabase, taskId, 'accept_current_revision');
 
 export async function startAutomaticAnalysis(supabase, taskId) {
   return await invokeAiAction(supabase, taskId, 'auto_analyze');
