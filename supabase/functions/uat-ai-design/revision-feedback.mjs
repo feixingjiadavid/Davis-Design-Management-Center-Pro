@@ -16,7 +16,7 @@ export function mergeAffectedPages(...groups) {
   return [...new Set(groups.flatMap((group) => Array.isArray(group) ? group : []).map(Number).filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
 }
 
-export function inferFeedbackAffectedPages(feedback = '', templatePages = []) {
+export function inferExplicitFeedbackPages(feedback = '', templatePages = []) {
   const text = normalize(feedback);
   const pages = Array.isArray(templatePages) ? templatePages : [];
   const valid = new Set(pages.map((page) => Number(page.page_index)).filter((value) => Number.isInteger(value) && value > 0));
@@ -39,7 +39,14 @@ export function inferFeedbackAffectedPages(feedback = '', templatePages = []) {
     const index = Number(page.page_index);
     if (title && text.includes(title) && valid.has(index)) matched.push(index);
   }
+  return mergeAffectedPages(matched);
+}
 
-  const explicit = mergeAffectedPages(matched);
-  return explicit.length ? explicit : [...valid].sort((a, b) => a - b);
+export function inferFeedbackAffectedPages(feedback = '', templatePages = []) {
+  const text = normalize(feedback);
+  const pages = Array.isArray(templatePages) ? templatePages : [];
+  const valid = pages.map((page) => Number(page.page_index)).filter((value) => Number.isInteger(value) && value > 0);
+  if (!text || valid.length === 0) return [];
+  const explicit = inferExplicitFeedbackPages(text, pages);
+  return explicit.length ? explicit : [...new Set(valid)].sort((a, b) => a - b);
 }
