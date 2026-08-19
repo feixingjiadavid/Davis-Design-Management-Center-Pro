@@ -20,3 +20,27 @@ export function selectHdPages(rows=[]) {
     .map(([page,row])=>({page,row,fileId:String(outputOf(row).drive_file_id||'').trim()}))
     .filter(({row,fileId})=>['ready','confirmed'].includes(String(row.status))&&fileId);
 }
+
+export function defaultReviewMode(){
+  return 'overview';
+}
+
+export function computeOverviewCardSize({
+  viewportWidth,
+  viewportHeight,
+  pageCount=3,
+  aspectRatio=1242/1660,
+  gap=16,
+  horizontalPadding=48,
+  chromeHeight=132,
+}={}) {
+  const columns=Math.max(1,Number(pageCount)||1);
+  const availableWidth=Math.max(1,(Number(viewportWidth)||1)-horizontalPadding);
+  const availableHeight=Math.max(1,(Number(viewportHeight)||1)-chromeHeight);
+  const widthFromHorizontal=(availableWidth-gap*(columns-1))/columns;
+  const widthFromVertical=availableHeight*aspectRatio;
+  const cardWidth=Math.max(1,Math.min(widthFromHorizontal,widthFromVertical));
+  const cardHeight=cardWidth/aspectRatio;
+  const totalWidth=cardWidth*columns+gap*(columns-1);
+  return {columns,availableWidth,availableHeight,cardWidth,cardHeight,totalWidth,gap};
+}
