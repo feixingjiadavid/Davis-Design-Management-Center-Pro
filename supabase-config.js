@@ -58,6 +58,9 @@ if (typeof window !== 'undefined') {
     import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
+    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v13')
+      .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
+      .catch(error => console.error('当前可验收版本加载失败:', error));
     import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v1')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
