@@ -1,4 +1,5 @@
 import { buildRevisionManifest, diffFixedTemplatePages } from './framework-template-core.ts';
+import { inferExplicitFeedbackPages, inferFeedbackAffectedPages, mergeAffectedPages } from './revision-feedback.mjs';
 
 export const CONTENT_REVISION_MODEL = 'doubao-seedream-4-0-250828';
 export const CONTENT_REVISION_PROMPT_VERSION = 'seedream-template-revision-v1';
@@ -84,13 +85,22 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     : mode === 'system_text'
       ? await sha256Text(systemContent)
       : await sha256Text(`${tencentHash}\n${systemContent}`);
-  if (newHash && previousHash && newHash === previousHash) {
+  if (!systemContent && newHash && previousHash && newHash === previousHash) {
     return { status: 'no_change', changed: false, revision: null, affected_pages: [] };
   }
 
   const augmentedTask = {
     ...task,
-    full_desc: [String(task.full_desc || ''), systemContent ? `本轮业务内容更新：${systemContent}` : ''].filter(Boolean).join('\n\n'),
+    full_desc: [
+      String(task.full_desc || ''),
+      systemContent ? `本轮需求方修改意见（AI设计师必须执行；可能是设计稿纠错，也可能是业务内容变化）：${systemContent}` : '',
+    ].filter(Boolean).join('\n\n'),
+    workflow_context: {
+      ...(task.workflow_context || {}),
+      mode: 'content_revision',
+      requester_feedback: systemContent,
+      rule: '领导已通过的框架母版不可更换。需求方反馈是本轮最高优先级修改指令；即使腾讯文档未变化，也必须处理设计稿纠错类意见。',
+    },
   };
   const analysis = await deps.analyze(admin, augmentedTask, payload?.user_jwt || '');
   if (String(analysis.status) === 'clarification_required') {
@@ -108,11 +118,16 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     }))
     : rawPages;
   const diff = diffFixedTemplatePages(templatePages, fixedPages);
+  const explicitFeedbackPages = systemContent ? inferExplicitFeedbackPages(systemContent, templatePages) : [];
+  const feedbackPages = systemContent
+    ? (diff.affectedPages.length > 0 ? explicitFeedbackPages : inferFeedbackAffectedPages(systemContent, templatePages))
+    : [];
+  const affectedPages = mergeAffectedPages(diff.affectedPages, feedbackPages);
   const nextRevisionNo = Number(latest?.revision_no || 0) + 1;
   const previousManifest = Array.isArray(latest?.page_manifest) && latest.page_manifest.length ? latest.page_manifest : templateManifest(template);
   const manifest = buildRevisionManifest(templatePages, previousManifest, []);
 
-  if (!diff.capacityConflict && diff.affectedPages.length === 0) {
+  if (!diff.capacityConflict && affectedPages.length === 0) {
     return { status: 'no_change', changed: false, revision: null, analysis, affected_pages: [] };
   }
 
@@ -125,8 +140,13 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     system_content: systemContent || null,
     previous_content_hash: previousHash || null,
     new_content_hash: newHash || null,
-    change_summary: { reason: diff.reason || null },
-    affected_pages: diff.affectedPages,
+    change_summary: {
+      reason: diff.reason || null,
+      requester_feedback: systemContent || null,
+      content_diff_pages: diff.affectedPages,
+      feedback_pages: feedbackPages,
+    },
+    affected_pages: affectedPages,
     page_manifest: manifest,
     status: diff.capacityConflict ? 'capacity_conflict' : 'content_ready',
     created_by: actorId,
@@ -138,7 +158,7 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     changed: true,
     revision: inserted.data,
     analysis,
-    affected_pages: diff.affectedPages,
+    affected_pages: affectedPages,
     reason: diff.reason || null,
   };
 }
@@ -186,6 +206,7 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
     revision_no: revision.revision_no,
     template_id: revision.template_id,
     source_mode: revision.source_mode,
+    requester_feedback: revision.system_content || null,
     previous_content_hash: revision.previous_content_hash,
     new_content_hash: revision.new_content_hash,
     affected_pages: affected,
@@ -194,7 +215,7 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
   });
   await admin.from('test_tasks').update({
     status: 'processing',
-    summary_desc: `内容改版 r${revision.revision_no} 正在生成受影响页面`,
+    summary_desc: `AI设计师正在基于已通过母版处理内容改版 r${revision.revision_no}`,
     history_json: JSON.stringify(history),
   }).eq('id', taskId);
   return {
