@@ -1,5 +1,6 @@
 // supabase-config.js
 import { loadSupabaseSdk } from './js/supabase-sdk-loader.js?v=uat-boot-fallback-20260814';
+import './js/uat-formal-role-bridge.js?v=formal-role-bridge-v1';
 
 // UAT 前端固定连接 Davis Design AI UAT 项目；仅使用可公开的 publishable key
 const supabaseUrl = 'https://bjzfkwxrvytgphvgwltl.supabase.co';
@@ -72,11 +73,11 @@ if (typeof window !== 'undefined') {
       .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
   }
 
-  // 需求方固定初稿验收区 v11：稳定 DOM，只在数据快照变化时更新；确认后复用正式 pending_approval 流程。
+  // 需求详情页：Demo 仅查看。3/3 完成后由数据库流程自动进入正式 pending_approval，只有领导能审批。
   if (page === 'task-detail-requester.html') {
-    import('./js/requester-demo-review-v10.js?v=requester-demo-review-v11')
-      .then(module => module.bootstrapRequesterDemoReviewV10(supabase))
-      .catch(error => console.error('需求方初稿验收区加载失败:', error));
+    import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12')
+      .then(module => module.bootstrapRequesterDemoViewV12(supabase))
+      .catch(error => console.error('框架方案只读预览加载失败:', error));
   }
 
   // 正式管理端复用既有框架审批详情页，不再跳向不存在的第二套审批页面。
