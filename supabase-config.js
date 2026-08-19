@@ -59,8 +59,8 @@ if (typeof window !== 'undefined') {
     .then(module => module.bootstrapAiConfidenceCopy())
     .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
 
-  // Demo v5：数据库队列状态是唯一真源；私有 Google Drive 通过鉴权 Relay 完整缓冲后预览。
-  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-dbqueue-v5b')
+  // Demo v7：数据库队列状态是唯一真源；Google Drive 私有文件统一走共享鉴权预览客户端。
+  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7')
     .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 }
