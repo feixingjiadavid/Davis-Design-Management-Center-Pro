@@ -5,7 +5,6 @@ let renderTimer=null;
 let observer=null;
 let heartbeat=null;
 let running=false;
-const hostSnapshots=new Map();
 
 const esc=(value)=>String(value??'').replace(/[&<>"']/g,(ch)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const pageName=()=>location.pathname.split('/').pop()||'index.html';
@@ -26,6 +25,16 @@ function rowsSnapshot(rows){
   }));
 }
 
+function demoTotal(rows){
+  return Math.max(1,...(rows||[]).map(row=>Number(row.page_count||0)));
+}
+
+function readyRows(rows){
+  return (rows||[])
+    .filter(row=>['ready','confirmed'].includes(String(row.status)))
+    .sort((a,b)=>Number(a.page_index||1)-Number(b.page_index||1));
+}
+
 async function loadCurrentRows(taskId){
   const {data,error}=await supabase.from('uat_design_generations')
     .select('*')
@@ -39,8 +48,8 @@ async function loadCurrentRows(taskId){
 }
 
 function cardsHtml(rows){
-  const ready=rows.filter(row=>['ready','confirmed'].includes(String(row.status)));
-  const total=Math.max(3,...rows.map(row=>Number(row.page_count||0)),ready.length);
+  const ready=readyRows(rows);
+  const total=Math.max(3,demoTotal(rows),ready.length);
   if(!ready.length)return '<div class="col-span-full rounded-xl border border-white/10 bg-black/20 px-5 py-8 text-center text-sm text-zinc-500">暂无已完成 Demo 页面。</div>';
   return ready.map(row=>{
     const page=Number(row.page_index||1);
@@ -62,6 +71,13 @@ function cardsHtml(rows){
       <div class="px-3 py-2 border-t border-white/10 flex items-center justify-between gap-3 text-[10px] text-slate-500"><span>${esc(row.model||'Seedream 4.0')} · 1242×1660</span>${driveUrl?`<a href="${esc(driveUrl)}" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">打开云盘原图 ↗</a>`:''}</div>
     </article>`;
   }).join('');
+}
+
+function fillHost(host,snapshot,html){
+  if(host.dataset.drivePreviewSnapshot===snapshot&&host.firstElementChild)return false;
+  host.innerHTML=html;
+  host.dataset.drivePreviewSnapshot=snapshot;
+  return true;
 }
 
 async function hydrateDriveImages(host){
@@ -89,6 +105,10 @@ async function hydrateDriveImages(host){
       node.textContent=`云盘预览加载失败：${error instanceof Error?error.message:String(error)}`;
     }
   }
+  return {
+    visibleImages:host.querySelectorAll('[data-v7-demo-page] img').length,
+    failedPreviews:host.querySelectorAll('[data-v7-hydrated="error"]').length,
+  };
 }
 
 function findLegacyWorkspaceGallery(panel){
@@ -96,7 +116,7 @@ function findLegacyWorkspaceGallery(panel){
   return candidates.find(node=>node.id!=='ai-drive-demo-gallery-v7-grid'&&/Demo\s*0?1\s*\/\s*0?3/i.test(node.textContent||''))||null;
 }
 
-function renderWorkspace(rows,taskId){
+async function renderWorkspace(rows,taskId){
   const panel=document.getElementById('ai-visual-context-panel');
   if(!panel)return false;
   const legacy=findLegacyWorkspaceGallery(panel);
@@ -109,11 +129,8 @@ function renderWorkspace(rows,taskId){
     panel.appendChild(host);
   }
   const snapshot=`${taskId}:${rowsSnapshot(rows)}`;
-  if(hostSnapshots.get(host.id)!==snapshot){
-    hostSnapshots.set(host.id,snapshot);
-    host.innerHTML=`<div class="flex items-center justify-between gap-3 mb-3"><p class="text-xs font-bold text-emerald-300">Seedream Demo · Google Drive 持久化预览</p><span class="text-[10px] text-slate-500">${rows.filter(r=>['ready','confirmed'].includes(String(r.status))).length}/3 已完成</span></div><div id="ai-drive-demo-gallery-v7-grid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div>`;
-  }
-  hydrateDriveImages(host);
+  fillHost(host,snapshot,`<div class="flex items-center justify-between gap-3 mb-3"><p class="text-xs font-bold text-emerald-300">Seedream Demo · Google Drive 持久化预览</p><span class="text-[10px] text-slate-500">${readyRows(rows).length}/${Math.max(3,demoTotal(rows))} 已完成</span></div><div id="ai-drive-demo-gallery-v7-grid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div>`);
+  await hydrateDriveImages(host);
   return true;
 }
 
@@ -124,10 +141,42 @@ function hideRequesterLegacyDemo(content){
   });
 }
 
-function renderRequester(rows,taskId){
+function removeLegacyRequesterConfirm(content){
+  content.querySelectorAll('button[onclick*="confirmAiDemo"]').forEach(button=>button.remove());
+}
+
+function requesterHostHtml(rows){
+  const readyCount=readyRows(rows).length;
+  const total=Math.max(3,demoTotal(rows));
+  return `<div class="flex items-center justify-between gap-3 mb-4"><div><p class="font-bold text-white">Demo 版本 · ${readyCount}/${total}</p><p class="text-xs text-zinc-500 mt-1">图片已持久化到 Google Drive，3 张方案必须全部真实显示后才能确认。</p></div><span class="text-xs text-emerald-400">${readyCount===total?'全部生成完成':'生成中'}</span></div><div class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div><div data-v8-confirm-slot class="mt-4"></div>`;
+}
+
+function updateRequesterConfirmGate(host,rows){
+  const slot=host.querySelector('[data-v8-confirm-slot]');
+  if(!slot)return;
+  const ready=readyRows(rows);
+  const total=Math.max(3,demoTotal(rows));
+  const visible=host.querySelectorAll('[data-v7-demo-page] img').length;
+  const errors=host.querySelectorAll('[data-v7-hydrated="error"]').length;
+  if(ready.length>=total&&visible>=total){
+    const generationId=String(ready[ready.length-1]?.id||'');
+    slot.innerHTML=`<div class="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-4"><p class="text-xs text-amber-200 mb-3">已确认 ${visible}/${total} 张 Demo 均可见。确认后才会进入 Seedream 4.0 成品生成。</p><button data-v8-confirm-demo="${esc(generationId)}" class="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">确认这 ${total} 张 Demo，生成 Seedream 4.0 成品</button></div>`;
+    const button=slot.querySelector('[data-v8-confirm-demo]');
+    if(button)button.onclick=()=>{
+      if(typeof window.confirmAiDemo!=='function')return;
+      window.confirmAiDemo(button.dataset.v8ConfirmDemo);
+    };
+    return;
+  }
+  const detail=errors?`其中 ${errors} 张云盘预览读取失败，请先解决预览问题。`:`当前已显示 ${visible}/${total} 张，全部可见后才允许确认。`;
+  slot.innerHTML=`<div class="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-zinc-500">${detail}</div>`;
+}
+
+async function renderRequester(rows,taskId){
   const content=document.getElementById('ai-requirement-content');
   if(!content)return false;
   hideRequesterLegacyDemo(content);
+  removeLegacyRequesterConfirm(content);
   let host=document.getElementById('requester-drive-demo-gallery-v7');
   if(!host){
     host=document.createElement('section');
@@ -136,12 +185,10 @@ function renderRequester(rows,taskId){
     content.appendChild(host);
   }
   const snapshot=`${taskId}:${rowsSnapshot(rows)}`;
-  if(hostSnapshots.get(host.id)!==snapshot){
-    hostSnapshots.set(host.id,snapshot);
-    const readyCount=rows.filter(r=>['ready','confirmed'].includes(String(r.status))).length;
-    host.innerHTML=`<div class="flex items-center justify-between gap-3 mb-4"><div><p class="font-bold text-white">Demo 版本 · ${readyCount}/3</p><p class="text-xs text-zinc-500 mt-1">图片已持久化到 Google Drive，页面通过登录身份安全读取。</p></div><span class="text-xs text-emerald-400">${readyCount===3?'全部完成':'生成中'}</span></div><div class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div>`;
-  }
-  hydrateDriveImages(host);
+  fillHost(host,snapshot,requesterHostHtml(rows));
+  updateRequesterConfirmGate(host,rows);
+  await hydrateDriveImages(host);
+  updateRequesterConfirmGate(host,rows);
   return true;
 }
 
@@ -154,10 +201,10 @@ async function renderNow(){
   running=true;
   try{
     const rows=await loadCurrentRows(taskId);
-    if(path==='ai-designer-workspace.html')renderWorkspace(rows,taskId);
-    else renderRequester(rows,taskId);
+    if(path==='ai-designer-workspace.html')await renderWorkspace(rows,taskId);
+    else await renderRequester(rows,taskId);
   }catch(error){
-    console.error('Seedream Drive v7 预览同步失败',error);
+    console.error('Seedream Drive v8 预览同步失败',error);
   }finally{
     running=false;
   }
