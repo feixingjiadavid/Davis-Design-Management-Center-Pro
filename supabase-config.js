@@ -78,6 +78,13 @@ if (typeof window !== 'undefined') {
       .then(module => module.bootstrapRequesterDemoReviewV10(supabase))
       .catch(error => console.error('需求方初稿验收区加载失败:', error));
   }
+
+  // 正式管理端复用既有框架审批详情页，不再跳向不存在的第二套审批页面。
+  if (page === 'manager-workspace.html') {
+    import('./js/formal-framework-approval-route.js?v=formal-framework-approval-v1')
+      .then(module => module.bootstrapFormalFrameworkApprovalRoute())
+      .catch(error => console.error('正式框架审批入口修复失败:', error));
+  }
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
