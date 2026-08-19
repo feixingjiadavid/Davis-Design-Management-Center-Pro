@@ -72,11 +72,11 @@ if (typeof window !== 'undefined') {
       .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
   }
 
-  // 需求方固定 Demo 验收区：作为 ai-requirement-panel 的兄弟节点，不会被聊天内容重绘删除。
+  // 需求方固定初稿验收区 v11：稳定 DOM，只在数据快照变化时更新；确认后复用正式 pending_approval 流程。
   if (page === 'task-detail-requester.html') {
-    import('./js/requester-demo-review-v10.js?v=requester-demo-review-v10')
+    import('./js/requester-demo-review-v10.js?v=requester-demo-review-v11')
       .then(module => module.bootstrapRequesterDemoReviewV10(supabase))
-      .catch(error => console.error('需求方 Demo 验收区加载失败:', error));
+      .catch(error => console.error('需求方初稿验收区加载失败:', error));
   }
 }
 
