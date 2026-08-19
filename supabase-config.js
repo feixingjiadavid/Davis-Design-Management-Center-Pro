@@ -64,8 +64,8 @@ if (typeof window !== 'undefined') {
     import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v1')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
-    import('./js/requester-framework-revision-flow-v2.js?v=requester-template-revision-v2')
-      .then(module => module.bootstrapRequesterFrameworkRevisionFlowV2(supabase))
+    import('./js/requester-framework-revision-flow-v3.js?v=requester-template-revision-v3')
+      .then(module => module.bootstrapRequesterFrameworkRevisionFlowV3(supabase))
       .catch(error => console.error('需求方母版/内容改版流程加载失败:', error));
     import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
       .then(module => module.bootstrapFrameworkHdReview(supabase))
