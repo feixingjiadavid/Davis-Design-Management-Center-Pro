@@ -22,8 +22,12 @@ export async function generateFrameworkRevision(admin: any, taskId: string, acto
   const key = String(payload?.idempotency_key || '').trim();
   if (!key) throw new Error('IDEMPOTENCY_KEY_REQUIRED');
 
-  const taskResult = await admin.from('test_tasks').select('*').eq('id', taskId).single();
+  const [taskResult, templateResult] = await Promise.all([
+    admin.from('test_tasks').select('*').eq('id', taskId).single(),
+    admin.from('uat_framework_templates').select('id').eq('task_id', taskId).maybeSingle(),
+  ]);
   if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
+  if (templateResult.data) throw new Error('FRAMEWORK_TEMPLATE_LOCKED_CONTENT_REVISION_ONLY');
   const task = taskResult.data;
   const history = historyOf(task);
   const formal = latestFormalAction(history);
