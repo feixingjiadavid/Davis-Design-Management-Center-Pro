@@ -1,4 +1,4 @@
-import { bootstrapRequesterDemoViewV12 } from './requester-demo-view-v12.js?v=requester-demo-view-v12c';
+import { bootstrapRequesterDemoViewV12 } from './requester-demo-view-v12.js?v=all-stages-lazy-v1';
 import { bootstrapLeaderDemoHdReviewV1 } from './leader-demo-hd-review-v1.js?v=leader-demo-hd-review-v1';
 
 // 兼容旧 HTML 入口：需求方不再审批 Demo。
