@@ -55,6 +55,9 @@ if (typeof window !== 'undefined') {
     import('./js/ai-designer-revision-loop-v2.js?v=revision-loop-v2-20260820')
       .then(module => module.bootstrapAiDesignerRevisionLoopV2(supabase))
       .catch(error => console.error('AI 内容修改循环加载失败:', error));
+    import('./js/all-generation-results-v1.js?v=all-generation-history-v1')
+      .then(module => module.bootstrapAllGenerationResultsV1(supabase))
+      .catch(error => console.error('AI 全阶段生成结果加载失败:', error));
   }
 
   if (page === 'task-detail-requester.html') {
@@ -79,6 +82,9 @@ if (typeof window !== 'undefined') {
     import('./js/framework-hd-review-v1.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapFrameworkHdReview(supabase))
       .catch(error => console.error('高清框架审核视图加载失败:', error));
+    import('./js/all-generation-results-v1.js?v=all-generation-history-v1')
+      .then(module => module.bootstrapAllGenerationResultsV1(supabase))
+      .catch(error => console.error('需求方全阶段生成结果加载失败:', error));
   }
 
   if (page === 'manager-workspace.html') {
