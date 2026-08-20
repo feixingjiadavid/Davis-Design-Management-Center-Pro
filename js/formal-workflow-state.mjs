@@ -8,9 +8,16 @@ export function hasApprovedFramework(history = []) {
 
 export function resolveAiPipelineStage({ status = '', hasDemo = false, hasFinal = false, history = [] } = {}) {
   const s = String(status || '');
+  const frameworkApproved = hasApprovedFramework(history);
   if (['completed', 'archived', 'reviewing', 'final_review'].includes(s) || hasFinal) return 5;
   if (s === 'pending_approval') return 3;
-  if (s === 'processing' && hasDemo && hasApprovedFramework(history)) return 4;
+
+  // Once the leader approved the framework, stages 1-4 are historical facts and must never regress.
+  // Content revisions may cycle through understanding/clarification/generation, but the original
+  // read → understand → demo → leader approval progress stays completed forever.
+  if (frameworkApproved && hasDemo && ['processing','needs_input','understanding_ready','ready_for_demo','ready_for_final'].includes(s)) return 4;
+
+  if (s === 'processing' && hasDemo && frameworkApproved) return 4;
   if (s === 'ready_for_final' && hasDemo) return 4;
   if (hasDemo || ['generating_demo', 'demo_review', 'demo_failed'].includes(s)) return 2;
   if (['processing', 'needs_input', 'understanding_ready', 'ready_for_demo'].includes(s)) return 1;
