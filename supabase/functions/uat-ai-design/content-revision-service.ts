@@ -2,6 +2,7 @@ import { buildRevisionManifest, diffFixedTemplatePages } from './framework-templ
 import { inferExplicitFeedbackPages, inferFeedbackAffectedPages, mergeAffectedPages } from './revision-feedback.mjs';
 import { stableGenerationUuid } from './generation-idempotency.mjs';
 import { SEEDREAM_45, selectRevisionModel, seedreamLabel } from './content-revision-model-router.mjs';
+import { classifyRevisionRelation } from './revision-relation-classifier.mjs';
 
 export const CONTENT_REVISION_MODEL = SEEDREAM_45;
 export const CONTENT_REVISION_PROMPT_VERSION = 'seedream-template-revision-v1';
@@ -81,7 +82,23 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
   if ((mode === 'system_text' || mode === 'combined') && !systemContent) throw new Error('SYSTEM_CONTENT_REQUIRED');
 
   const latest = await latestRevision(admin, taskId);
-  const revisionRelation = String(payload?.revision_relation || '') === 'quality_retry' ? 'quality_retry' : 'new_requirement';
+  let relationDecision: any = {
+    relation: String(payload?.revision_relation || '') === 'quality_retry' ? 'quality_retry' : 'new_requirement',
+    confidence: Number(payload?.revision_relation_confidence || 0),
+    reason: String(payload?.revision_relation_reason || ''),
+    source: String(payload?.revision_relation_source || 'payload'),
+  };
+  const hasExplicitRelation = ['quality_retry', 'new_requirement'].includes(String(payload?.revision_relation || ''));
+  const previousWasDelivered = latest && ['ready_for_review', 'superseded', 'accepted'].includes(String(latest.status || ''));
+  if (!hasExplicitRelation && previousWasDelivered && systemContent) {
+    relationDecision = await classifyRevisionRelation({
+      feedback: systemContent,
+      previousRevision: latest,
+      userJwt: String(payload?.user_jwt || ''),
+      model: Deno.env.get('DEEPSEEK_REQUIREMENT_MODEL') || 'deepseek-v4-flash',
+    });
+  }
+  const revisionRelation = relationDecision.relation === 'quality_retry' ? 'quality_retry' : 'new_requirement';
   const selectedModel = selectRevisionModel({ relation: revisionRelation });
   const previousHash = String(latest?.new_content_hash || template.source_content_hash || '');
   const newHash = mode === 'tencent_doc'
@@ -110,7 +127,7 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
   };
   const analysis = await deps.analyze(admin, augmentedTask, payload?.user_jwt || '');
   if (String(analysis.status) === 'clarification_required') {
-    return { status: 'needs_input', analysis, revision: null, affected_pages: [] };
+    return { status: 'needs_input', analysis, revision: null, affected_pages: [], revision_relation: revisionRelation, selected_model: selectedModel, relation_decision: relationDecision };
   }
   if (!['understanding_ready', 'confirmed'].includes(String(analysis.status))) throw new Error('ANALYSIS_NOT_READY');
 
@@ -136,7 +153,7 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
   const manifest = buildRevisionManifest(templatePages, previousManifest, []);
 
   if (!diff.capacityConflict && affectedPages.length === 0) {
-    return { status: 'no_change', changed: false, revision: null, analysis, affected_pages: [] };
+    return { status: 'no_change', changed: false, revision: null, analysis, affected_pages: [], revision_relation: revisionRelation, selected_model: selectedModel, relation_decision: relationDecision };
   }
 
   const inserted = await admin.from('uat_content_revisions').insert({
@@ -154,9 +171,9 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
       content_diff_pages: diff.affectedPages,
       feedback_pages: feedbackPages,
       revision_relation: revisionRelation,
-      relation_confidence: Number(payload?.revision_relation_confidence || 0),
-      relation_reason: String(payload?.revision_relation_reason || ''),
-      relation_source: String(payload?.revision_relation_source || ''),
+      relation_confidence: Number(relationDecision.confidence || 0),
+      relation_reason: String(relationDecision.reason || ''),
+      relation_source: String(relationDecision.source || ''),
       selected_model: selectedModel,
       model_route_version: 'seedream-revision-route-v1',
     },
@@ -176,6 +193,7 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     reason: diff.reason || null,
     selected_model: selectedModel,
     revision_relation: revisionRelation,
+    relation_decision: relationDecision,
   };
 }
 
