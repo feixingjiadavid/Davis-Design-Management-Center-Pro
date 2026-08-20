@@ -3,7 +3,11 @@ const REQUESTER = 'uat.requester@webank.com';
 const AI_DESIGNER = 'davis.design.ai@webank.com';
 
 const LEADER_ACTIONS = new Set(['approve_framework', 'reject_framework']);
-const REQUESTER_ACTIONS = new Set(['submit_content_revision_request', 'accept_current_revision']);
+const REQUESTER_ACTIONS = new Set([
+  'submit_content_revision_request',
+  'answer_content_revision_clarification',
+  'accept_current_revision',
+]);
 const AI_DESIGNER_ACTIONS = new Set([
   'generate_framework_revision',
   'check_content_update',
