@@ -1,11 +1,12 @@
-const DEFAULT_MODULE_URLS = [
-  'https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm',
-  'https://esm.sh/@supabase/supabase-js@2.110.9?bundle',
+const DEFAULT_UMD_URLS = [
+  'https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy?format=umd&v=20260820-v2',
+  'https://unpkg.com/@supabase/supabase-js@2.110.9',
 ];
 
-const DEFAULT_UMD_URLS = [
-  'https://unpkg.com/@supabase/supabase-js@2.110.9',
+const DEFAULT_MODULE_URLS = [
+  'https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy?v=20260820-v2',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm',
+  'https://esm.sh/@supabase/supabase-js@2.110.9?bundle',
 ];
 
 function timeoutError(label) {
@@ -53,22 +54,25 @@ export async function loadSupabaseSdk({
 
   const failures = [];
 
-  for (const url of moduleUrls) {
-    try {
-      const mod = await withTimeout(importModule(url), timeoutMs, 'SUPABASE_ESM');
-      if (typeof mod?.createClient !== 'function') throw new Error('CREATE_CLIENT_MISSING');
-      return { createClient: mod.createClient, source: url, mode: 'esm' };
-    } catch (error) {
-      failures.push(`${url} => ${error?.message || String(error)}`);
-    }
-  }
-
+  // Browser boot path: load UMD from our own UAT Edge first. This avoids
+  // cross-origin dynamic-import quirks and keeps requester boot independent
+  // of jsDelivr/esm.sh availability on the user's network.
   for (const url of umdUrls) {
     try {
       await withTimeout(loadScript(url, globalObject), timeoutMs, 'SUPABASE_UMD');
       const createClient = globalObject?.supabase?.createClient;
       if (typeof createClient !== 'function') throw new Error('CREATE_CLIENT_MISSING');
       return { createClient, source: url, mode: 'umd' };
+    } catch (error) {
+      failures.push(`${url} => ${error?.message || String(error)}`);
+    }
+  }
+
+  for (const url of moduleUrls) {
+    try {
+      const mod = await withTimeout(importModule(url), timeoutMs, 'SUPABASE_ESM');
+      if (typeof mod?.createClient !== 'function') throw new Error('CREATE_CLIENT_MISSING');
+      return { createClient: mod.createClient, source: url, mode: 'esm' };
     } catch (error) {
       failures.push(`${url} => ${error?.message || String(error)}`);
     }
