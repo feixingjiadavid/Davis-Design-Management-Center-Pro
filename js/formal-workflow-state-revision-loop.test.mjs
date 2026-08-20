@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { resolveAiPipelineStage } from './formal-workflow-state.mjs';
+const approved = [{ action:'submit_framework' }, { action:'approve_framework', is_rejected:false }];
+assert.equal(resolveAiPipelineStage({ status:'needs_input', hasDemo:true, hasFinal:false, history:approved }), 4);
+assert.equal(resolveAiPipelineStage({ status:'processing', hasDemo:true, hasFinal:false, history:approved }), 4);
+assert.equal(resolveAiPipelineStage({ status:'understanding_ready', hasDemo:true, hasFinal:false, history:approved }), 4);
+assert.equal(resolveAiPipelineStage({ status:'reviewing', hasDemo:true, hasFinal:false, history:approved }), 5);
+assert.equal(resolveAiPipelineStage({ status:'pending_approval', hasDemo:true, hasFinal:false, history:[{action:'submit_framework'}] }), 3);
+assert.equal(resolveAiPipelineStage({ status:'needs_input', hasDemo:false, hasFinal:false, history:[] }), 1);
+console.log('formal workflow revision progress: 6/6 passed');
