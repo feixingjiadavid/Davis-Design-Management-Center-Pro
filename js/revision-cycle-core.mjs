@@ -10,20 +10,35 @@ export function parseHistory(raw) {
 
 export function latestRequesterFeedback(history = []) {
   const accepted = new Set(['requester_revision_feedback', 'reject_draft']);
+  const resolvedWithoutRevision = new Set(['content_revision_no_change', 'complete']);
   for (let index = (history || []).length - 1; index >= 0; index -= 1) {
     const item = history[index] || {};
-    if (!accepted.has(String(item.action || ''))) continue;
+    const action = String(item.action || '');
+    if (resolvedWithoutRevision.has(action)) return null;
+    if (!accepted.has(action)) continue;
     const feedback = String(item.reply || item.requester_feedback || '').trim();
     if (!feedback) continue;
     return {
       feedback,
       refresh_tencent_doc: Boolean(item.refresh_tencent_doc),
-      action: String(item.action || ''),
+      action,
       time: String(item.time || item.created_at || ''),
       revision_id: String(item.revision_id || ''),
     };
   }
   return null;
+}
+
+export function noChangeCycles(history = []) {
+  return (history || [])
+    .filter((item) => String(item?.action || '') === 'content_revision_no_change')
+    .map((item) => ({
+      revision_no: Number(item?.revision_no || 0),
+      requester_feedback: String(item?.requester_feedback || item?.reply || '').trim(),
+      time: String(item?.time || item?.created_at || ''),
+      status: 'no_change',
+    }))
+    .filter((item) => item.revision_no > 0);
 }
 
 export function feedbackCoveredByRevision(feedback, revision) {
@@ -36,8 +51,10 @@ export function feedbackCoveredByRevision(feedback, revision) {
   return Number.isFinite(feedbackTime) && Number.isFinite(revisionTime) && revisionTime >= feedbackTime;
 }
 
-export function nextRevisionNo(revisions = []) {
-  return Math.max(0, ...(revisions || []).map((item) => Number(item?.revision_no || 0))) + 1;
+export function nextRevisionNo(revisions = [], history = []) {
+  const revisionNumbers = (revisions || []).map((item) => Number(item?.revision_no || 0));
+  const historyNumbers = (history || []).map((item) => Number(item?.revision_no || 0));
+  return Math.max(0, ...revisionNumbers, ...historyNumbers) + 1;
 }
 
 export function revisionStage(status = '') {
@@ -49,6 +66,7 @@ export function revisionStage(status = '') {
   if (value === 'superseded') return { key:'superseded', label:'已交付，后续继续修改' };
   if (value === 'capacity_conflict') return { key:'blocked', label:'内容容量冲突' };
   if (value === 'failed') return { key:'failed', label:'本轮生成失败' };
+  if (value === 'no_change') return { key:'no_change', label:'AI 判断无需重新生成' };
   return { key:'pending', label:value || '等待处理' };
 }
 
