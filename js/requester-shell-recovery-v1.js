@@ -1,4 +1,4 @@
-import { bootstrapRequesterDeliveryViewV13 } from './requester-delivery-view-v13.js?v=requester-delivery-v16-45-manifest';
+import { bootstrapRequesterDeliveryViewV13 } from './requester-delivery-view-v13.js?v=all-stages-lazy-v1';
 
 let started = false;
 let retryTimer = null;
