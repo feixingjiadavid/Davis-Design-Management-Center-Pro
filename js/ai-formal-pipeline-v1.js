@@ -2,7 +2,9 @@ import { resolveAiPipelineStage } from './formal-workflow-state.mjs?v=formal-wor
 
 let client = null;
 let timer = null;
+let observer = null;
 let lastSnapshot = '';
+let currentStage = null;
 
 const labels = [
   '① 读取资料',
@@ -45,9 +47,22 @@ function hasFinal(task, history) {
     ['final_review','reviewing','completed','archived'].includes(status);
 }
 
-function paint(stage) {
+function pipelineMatches(stage) {
   const pipeline = ensurePipeline();
-  if (!pipeline) return;
+  if (!pipeline) return true;
+  const steps = [...pipeline.querySelectorAll('.step')];
+  if (steps.length !== labels.length) return false;
+  return steps.every((el, index) => {
+    const shouldDone = index < stage;
+    const shouldCurrent = index === stage;
+    return el.classList.contains('done') === shouldDone && el.classList.contains('current') === shouldCurrent;
+  });
+}
+
+function paint(stage) {
+  currentStage = stage;
+  const pipeline = ensurePipeline();
+  if (!pipeline || pipelineMatches(stage)) return;
   [...pipeline.querySelectorAll('.step')].forEach((el, index) => {
     el.classList.remove('done', 'current');
     if (index < stage) el.classList.add('done');
@@ -55,10 +70,21 @@ function paint(stage) {
   });
 }
 
+function protectPipelineOwnership() {
+  const pipeline = ensurePipeline();
+  if (!pipeline || observer) return;
+  observer = new MutationObserver(() => {
+    if (currentStage === null) return;
+    if (!pipelineMatches(currentStage)) queueMicrotask(() => paint(currentStage));
+  });
+  observer.observe(pipeline, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+}
+
 async function sync() {
   if (!client) return;
   const taskId = activeTaskId();
   ensurePipeline();
+  protectPipelineOwnership();
   if (!taskId) return;
 
   const { data: task, error } = await client
@@ -76,9 +102,12 @@ async function sync() {
     history,
   });
   const snapshot = JSON.stringify({ id: task.id, status: task.status, stage, historyLength: history.length });
-  if (snapshot === lastSnapshot) return;
-  lastSnapshot = snapshot;
-  paint(stage);
+  if (snapshot !== lastSnapshot) {
+    lastSnapshot = snapshot;
+    paint(stage);
+  } else if (!pipelineMatches(stage)) {
+    paint(stage);
+  }
 
   const active = document.querySelector('#taskList .task.active');
   if (active) {
@@ -96,6 +125,7 @@ export function bootstrapAiFormalPipeline(clientInstance) {
 
   const start = () => {
     ensurePipeline();
+    protectPipelineOwnership();
     sync();
     timer = setInterval(sync, 1500);
     const taskList = document.getElementById('taskList');
@@ -105,5 +135,8 @@ export function bootstrapAiFormalPipeline(clientInstance) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 
-  window.addEventListener('beforeunload', () => clearInterval(timer), { once: true });
+  window.addEventListener('beforeunload', () => {
+    clearInterval(timer);
+    observer?.disconnect();
+  }, { once: true });
 }
