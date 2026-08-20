@@ -64,7 +64,7 @@ if (typeof window !== 'undefined') {
     import('./js/requester-delivery-view-v13.js?v=requester-delivery-v14-revision-loop')
       .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
       .catch(error => console.error('当前可验收版本加载失败:', error));
-    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v2-no-generation')
+    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v3-revision-history-only')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
     import('./js/requester-revision-loop-v1.js?v=revision-loop-v1-20260820')
