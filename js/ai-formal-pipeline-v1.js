@@ -1,4 +1,4 @@
-import { resolveAiPipelineStage } from './formal-workflow-state.mjs?v=formal-workflow-state-v1';
+import { resolveAiPipelineStage } from './formal-workflow-state.mjs?v=formal-workflow-state-v2-revision-loop';
 
 let client = null;
 let timer = null;
