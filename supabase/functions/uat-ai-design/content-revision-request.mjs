@@ -18,6 +18,10 @@ export async function submitRequesterRevisionRequest(admin, task, actorId, paylo
     use_tencent_doc: refreshTencent,
     requester_feedback: feedback,
     user_jwt: String(payload?.user_jwt || ''),
+    revision_relation: String(payload?.revision_relation || ''),
+    revision_relation_confidence: Number(payload?.revision_relation_confidence || 0),
+    revision_relation_reason: String(payload?.revision_relation_reason || ''),
+    revision_relation_source: String(payload?.revision_relation_source || ''),
   }, deps.prepareDeps || {});
 
   return {
