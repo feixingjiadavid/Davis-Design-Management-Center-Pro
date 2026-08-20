@@ -10,7 +10,7 @@ export async function submitRequesterRevisionRequest(admin, task, actorId, paylo
     if (typeof deps.refreshSources !== 'function') throw new Error('SOURCE_REFRESH_UNAVAILABLE');
     await deps.refreshSources(admin, task, actorId);
   }
-  if (typeof deps.prepare !== 'function' || typeof deps.queue !== 'function') throw new Error('REVISION_WORKFLOW_DEPENDENCY_MISSING');
+  if (typeof deps.prepare !== 'function') throw new Error('REVISION_WORKFLOW_DEPENDENCY_MISSING');
 
   const prepared = await deps.prepare(admin, task.id, actorId, {
     source_mode: refreshTencent ? 'combined' : 'system_text',
@@ -20,9 +20,9 @@ export async function submitRequesterRevisionRequest(admin, task, actorId, paylo
     user_jwt: String(payload?.user_jwt || ''),
   }, deps.prepareDeps || {});
 
-  if (String(prepared?.status || '') !== 'content_ready') return prepared;
-  const revisionId = String(prepared?.revision?.id || '');
-  if (!revisionId) throw new Error('CONTENT_REVISION_NOT_FOUND');
-  const queued = await deps.queue(admin, task.id, revisionId, idempotencyKey);
-  return { ...queued, prepared };
+  return {
+    ...prepared,
+    request_id: idempotencyKey,
+    generation_started: false,
+  };
 }
