@@ -1,4 +1,4 @@
-const BUILD = '20260820-supabase-sdk-proxy-v1';
+const BUILD = '20260820-supabase-sdk-proxy-v2';
 const SOURCES = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/dist/umd/supabase.js',
   'https://unpkg.com/@supabase/supabase-js@2.110.9/dist/umd/supabase.js',
@@ -26,11 +26,12 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (!['GET', 'HEAD'].includes(req.method)) return fail('METHOD_NOT_ALLOWED', 405);
 
+  const format = new URL(req.url).searchParams.get('format') === 'umd' ? 'umd' : 'esm';
   const failures: string[] = [];
   for (const source of SOURCES) {
     try {
       const response = await fetch(source, {
-        headers: { 'user-agent': 'Davis-UAT-SDK-Proxy/1.0' },
+        headers: { 'user-agent': 'Davis-UAT-SDK-Proxy/2.0' },
         signal: AbortSignal.timeout(20000),
       });
       if (!response.ok) {
@@ -38,18 +39,21 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       const text = await response.text();
-      if (!text.includes('createClient')) {
+      if (!text.includes('createClient') || !text.includes('var supabase')) {
         failures.push(`${source}:CREATE_CLIENT_MISSING`);
         continue;
       }
-      const moduleText = `${text}\nexport const createClient = supabase.createClient;\nexport default supabase;\n`;
-      return new Response(req.method === 'HEAD' ? null : moduleText, {
+      const body = format === 'umd'
+        ? text
+        : `${text}\nexport const createClient = supabase.createClient;\nexport default supabase;\n`;
+      return new Response(req.method === 'HEAD' ? null : body, {
         status: 200,
         headers: {
           ...CORS,
           'Content-Type': 'application/javascript; charset=utf-8',
-          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
           'X-Davis-SDK-Proxy-Build': BUILD,
+          'X-Davis-SDK-Format': format,
           'X-Davis-SDK-Upstream': source,
         },
       });
