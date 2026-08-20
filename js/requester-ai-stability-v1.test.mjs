@@ -8,4 +8,7 @@ assert.match(source, /无生图权限/);
 assert.match(source, /需求方只能补充需求信息/);
 assert.match(source, /data-generate-demo/);
 assert.match(source, /data-generate-final/);
-console.log('requester generation guard: 6/6 passed');
+assert.match(source, /revisionLoopOwnsClarifications/);
+assert.match(source, /ai-requirement-panel/);
+assert.match(source, /data-revision-loop-root/);
+console.log('requester generation guard and clarification ownership: 9/9 passed');
