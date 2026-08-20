@@ -4,19 +4,39 @@ let refreshTimer = null;
 let takeoverTimer = null;
 let observer = null;
 
+function requesterGenerationForbidden() {
+  if (typeof window.showToast === 'function') {
+    window.showToast('无生图权限', '需求方只能补充需求信息；图片生成由 AI 设计师执行。', 'info');
+  }
+  return false;
+}
+
 function hideLegacyAiArtifacts() {
   const content = document.getElementById('ai-requirement-content');
   if (!content) return;
 
-  content.querySelectorAll('button[onclick*="confirmAiDemo"], [data-v8-confirm-demo], [data-requester-confirm-demo], [data-confirm-initial-draft]')
+  content.querySelectorAll([
+    'button[onclick*="confirmAiUnderstanding"]',
+    'button[onclick*="confirmAiDemo"]',
+    '[data-v8-confirm-demo]',
+    '[data-requester-confirm-demo]',
+    '[data-confirm-initial-draft]',
+    '[data-generate-demo]',
+    '[data-generate-final]'
+  ].join(','))
     .forEach((node) => node.remove());
 
   [...content.querySelectorAll('p')]
-    .filter((node) => String(node.textContent || '').trim() === 'Demo 版本')
+    .filter((node) => ['Demo 版本', 'Seedream 4.0 成品'].includes(String(node.textContent || '').trim()))
     .forEach((node) => {
       const block = node.parentElement;
       if (block) block.style.display = 'none';
     });
+}
+
+function installRequesterGenerationGuards() {
+  window.confirmAiUnderstanding = requesterGenerationForbidden;
+  window.confirmAiDemo = requesterGenerationForbidden;
 }
 
 function safeScheduleAiRefresh() {
@@ -30,6 +50,7 @@ function safeScheduleAiRefresh() {
       if (typeof window.renderAiRequirementPanel === 'function') {
         await window.renderAiRequirementPanel();
         hideLegacyAiArtifacts();
+        installRequesterGenerationGuards();
       }
     } catch (error) {
       console.error('AI 局部刷新失败:', error);
@@ -41,6 +62,7 @@ function installSchedulerGuard() {
   if (window.scheduleAiChatRefresh !== safeScheduleAiRefresh) {
     window.scheduleAiChatRefresh = safeScheduleAiRefresh;
   }
+  installRequesterGenerationGuards();
   hideLegacyAiArtifacts();
 }
 
@@ -51,19 +73,23 @@ export function bootstrapRequesterAiStabilityV1() {
 
   installSchedulerGuard();
 
-  // 兼容旧脚本稍后才声明 scheduleAiChatRefresh 的加载顺序：短时间内持续接管一次。
+  // 兼容旧脚本稍后声明生成函数：持续接管，确保需求方永远拿不到生图入口。
   takeoverTimer = setInterval(installSchedulerGuard, 100);
   setTimeout(() => {
     clearInterval(takeoverTimer);
     installSchedulerGuard();
-  }, 10000);
+  }, 15000);
 
   const startObserver = () => {
     const content = document.getElementById('ai-requirement-content');
     if (!content || observer) return;
-    observer = new MutationObserver(() => hideLegacyAiArtifacts());
+    observer = new MutationObserver(() => {
+      hideLegacyAiArtifacts();
+      installRequesterGenerationGuards();
+    });
     observer.observe(content, { childList: true, subtree: true });
     hideLegacyAiArtifacts();
+    installRequesterGenerationGuards();
   };
 
   if (document.readyState === 'loading') {
