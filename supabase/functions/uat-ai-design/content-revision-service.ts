@@ -70,7 +70,7 @@ export async function checkContentUpdate(admin: any, taskId: string, actorId: st
 
 export async function prepareContentRevision(admin: any, taskId: string, actorId: string, payload: any, deps: any) {
   const { task, template } = await taskAndTemplate(admin, taskId);
-  if (String(task.status) !== 'reviewing') throw new Error('TASK_NOT_IN_REQUESTER_REVIEW');
+  if (!['reviewing', 'rejected'].includes(String(task.status))) throw new Error('TASK_NOT_IN_REQUESTER_REVIEW');
   const systemContent = normalizeSystem(payload?.system_content);
   const mode = String(payload?.source_mode || ((systemContent && payload?.use_tencent_doc) ? 'combined' : systemContent ? 'system_text' : 'tencent_doc'));
   if (!['tencent_doc', 'system_text', 'combined'].includes(mode)) throw new Error('REVISION_SOURCE_MODE_INVALID');
@@ -122,7 +122,9 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
   const feedbackPages = systemContent
     ? (diff.affectedPages.length > 0 ? explicitFeedbackPages : inferFeedbackAffectedPages(systemContent, templatePages))
     : [];
-  const affectedPages = mergeAffectedPages(diff.affectedPages, feedbackPages);
+  const affectedPages = explicitFeedbackPages.length
+    ? explicitFeedbackPages
+    : mergeAffectedPages(diff.affectedPages, feedbackPages);
   const nextRevisionNo = Number(latest?.revision_no || 0) + 1;
   const previousManifest = Array.isArray(latest?.page_manifest) && latest.page_manifest.length ? latest.page_manifest : templateManifest(template);
   const manifest = buildRevisionManifest(templatePages, previousManifest, []);
@@ -229,7 +231,7 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
 export async function acceptCurrentRevision(admin: any, taskId: string, actorLabel = 'UAT 需求方') {
   const task = (await admin.from('test_tasks').select('*').eq('id', taskId).single()).data;
   if (!task) throw new Error('TASK_NOT_FOUND');
-  if (String(task.status) !== 'reviewing') throw new Error('TASK_NOT_IN_REQUESTER_REVIEW');
+  if (!['reviewing', 'rejected'].includes(String(task.status))) throw new Error('TASK_NOT_IN_REQUESTER_REVIEW');
   const template = (await admin.from('uat_framework_templates').select('*').eq('task_id', taskId).single()).data;
   if (!template) throw new Error('FRAMEWORK_TEMPLATE_REQUIRED');
   const revision = (await admin.from('uat_content_revisions').select('*').eq('task_id', taskId).eq('status', 'ready_for_review').order('revision_no', { ascending: false }).limit(1).maybeSingle()).data || null;
