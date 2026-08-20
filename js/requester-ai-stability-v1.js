@@ -11,6 +11,54 @@ function requesterGenerationForbidden() {
   return false;
 }
 
+function revisionLoopOwnsClarifications() {
+  return Boolean(document.querySelector('[data-revision-loop-root="v1"]'));
+}
+
+function directChildOf(node, parent) {
+  let current = node;
+  while (current?.parentElement && current.parentElement !== parent) current = current.parentElement;
+  return current?.parentElement === parent ? current : null;
+}
+
+function syncLegacyClarificationOwnership() {
+  const content = document.getElementById('ai-requirement-content');
+  const section = content?.querySelector('#ai-clarification-chat');
+  if (!section) return;
+
+  const ownedByRevisionLoop = revisionLoopOwnsClarifications();
+  const questionInputs = [...section.querySelectorAll('[data-ai-question]')];
+  const questionContainers = new Set(questionInputs.map((input) => directChildOf(input, section)).filter(Boolean));
+  const generalMessage = section.querySelector('#ai-general-message');
+  const submitButton = section.querySelector('#ai-chat-submit');
+  const delegateButton = section.querySelector('button[onclick*="delegateAiClarifications"]');
+  const actionRow = submitButton ? directChildOf(submitButton, section) : null;
+
+  questionContainers.forEach((node) => { node.style.display = ownedByRevisionLoop ? 'none' : ''; });
+  if (generalMessage) generalMessage.style.display = ownedByRevisionLoop ? 'none' : '';
+  if (actionRow) actionRow.style.display = ownedByRevisionLoop ? 'none' : '';
+  else {
+    if (submitButton) submitButton.style.display = ownedByRevisionLoop ? 'none' : '';
+    if (delegateButton) delegateButton.style.display = ownedByRevisionLoop ? 'none' : '';
+  }
+
+  const header = section.firstElementChild;
+  const headerStatus = header?.querySelector('span');
+  let notice = section.querySelector('[data-revision-chat-readonly]');
+  if (ownedByRevisionLoop) {
+    if (headerStatus) headerStatus.textContent = '本轮沟通记录';
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.dataset.revisionChatReadonly = '1';
+      notice.className = 'mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3 text-xs text-indigo-300';
+      notice.textContent = '本轮修改问题请在上方修改循环中回答；这里仅保留需求方与 AI 设计师的沟通记录。';
+      section.appendChild(notice);
+    }
+  } else if (notice) {
+    notice.remove();
+  }
+}
+
 function hideLegacyAiArtifacts() {
   const content = document.getElementById('ai-requirement-content');
   if (!content) return;
@@ -32,6 +80,8 @@ function hideLegacyAiArtifacts() {
       const block = node.parentElement;
       if (block) block.style.display = 'none';
     });
+
+  syncLegacyClarificationOwnership();
 }
 
 function installRequesterGenerationGuards() {
