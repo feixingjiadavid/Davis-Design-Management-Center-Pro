@@ -8,7 +8,6 @@ import { saveAiProcessingAck, saveRequesterAnswers } from './clarification-chat.
 import { assertTemplateWorkflowActor } from './template-workflow-permissions.mjs';
 
 const LEADER = 'uat.leader@webank.com';
-const REQUESTER = 'uat.requester@webank.com';
 const AI_DESIGNER = 'davis.design.ai@webank.com';
 
 export const TEMPLATE_WORKFLOW_ACTIONS = new Set([
@@ -47,7 +46,7 @@ async function supersedePreviousReview(admin: any, taskId: string) {
 
 async function updateTaskAfterPrepared(admin: any, taskId: string, data: any) {
   const status = String(data?.status || '');
-  if (status === 'content_ready') await admin.from('test_tasks').update({ status:'processing', summary_desc:`AI设计师已理解第 ${data?.revision?.revision_no || ''} 次修改，正在自动进入受影响页面生成` }).eq('id', taskId);
+  if (status === 'content_ready') await admin.from('test_tasks').update({ status:'processing', summary_desc:`AI设计师已真实理解第 ${data?.revision?.revision_no || ''} 次修改；等待 AI 设计师账号自动执行受影响页面生成` }).eq('id', taskId);
   else if (status === 'capacity_conflict') await admin.from('test_tasks').update({ status:'reviewing', summary_desc:'AI设计师已分析修改意见：新内容超出已通过母版容量，请需求方调整后重新提交' }).eq('id', taskId);
   else if (status === 'needs_input') await admin.from('test_tasks').update({ status:'needs_input', summary_desc:'AI设计师已真实理解修改意见，但仍有关键信息需要需求方补充' }).eq('id', taskId);
   else if (status === 'no_change') await admin.from('test_tasks').update({ status:'reviewing', summary_desc:'AI设计师已完成本轮理解，判断无需重新生图，可直接验收当前版本' }).eq('id', taskId);
@@ -63,27 +62,10 @@ async function recordUnderstanding(admin: any, taskId: string, data: any, feedba
   }]);
 }
 
-async function normalizeAiGenerationHistory(admin: any, taskId: string, revision: any, generations: any[]) {
-  const current = (await admin.from('test_tasks').select('history_json').eq('id', taskId).single()).data;
-  const history = parseHistory(current);
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const item = history[index];
-    if (String(item?.action || '') === 'content_revision_submitted' && Number(item?.revision_no || 0) === Number(revision?.revision_no || 0)) {
-      history[index] = { ...item, action:'content_revision_generation_started', operator:'Davis AI设计师', generated_by:'ai_designer', desc:`AI 设计师开始第 ${revision.revision_no} 次修改生成`, time:item.time || new Date().toISOString() };
-      break;
-    }
-  }
-  await admin.from('test_tasks').update({ history_json:JSON.stringify(history), status:'processing', summary_desc:`AI设计师正在执行第 ${revision.revision_no} 次内容修改，生成 ${(revision.affected_pages || []).map((p:any)=>`P${p}`).join('、')}` }).eq('id', taskId);
-  for (const generation of generations || []) {
-    await admin.from('uat_design_generations').update({ output:{ ...(generation.output || {}), queued_by:AI_DESIGNER, revision_no:revision.revision_no } }).eq('id', generation.id);
-  }
-}
-
 async function autoQueueIfReady(admin: any, taskId: string, data: any) {
   if (String(data?.status || '') !== 'content_ready' || !data?.revision?.id) return data;
   const key = `ai-content-revision:${taskId}:r${data.revision.revision_no}`;
   const queued = await queueContentRevision(admin, taskId, data.revision.id, key);
-  await normalizeAiGenerationHistory(admin, taskId, data.revision, queued.generations || []);
   await admin.from('uat_audit_log').insert({ actor_id:null, actor_email:AI_DESIGNER, action:'ai_designer_content_revision_generation_started', task_id:taskId, details:{ revision_id:data.revision.id, revision_no:data.revision.revision_no, affected_pages:data.affected_pages || [], generation_started:true } });
   return { ...queued, prepared:data, generation_started:true };
 }
@@ -110,11 +92,8 @@ async function continueRevisionAfterClarification(admin: any, task: any, taskId:
   }, { analyze:analyzeRequirement });
   await recordUnderstanding(admin, taskId, prepared, context.feedback);
   await updateTaskAfterPrepared(admin, taskId, prepared);
-  await admin.from('uat_audit_log').insert({
-    actor_id:auth.user.id, actor_email:auth.user.email, action:'content_revision_clarification_answered', task_id:taskId,
-    details:{ status:prepared?.status, requester_feedback:context.feedback, affected_pages:prepared?.affected_pages || [], generation_started:false },
-  });
-  return await autoQueueIfReady(admin, taskId, prepared);
+  await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:auth.user.email, action:'content_revision_clarification_answered', task_id:taskId, details:{ status:prepared?.status, requester_feedback:context.feedback, affected_pages:prepared?.affected_pages || [], generation_started:false } });
+  return { ...prepared, generation_started:false };
 }
 
 export async function handleTemplateWorkflowAction(args: any) {
@@ -139,14 +118,12 @@ export async function handleTemplateWorkflowAction(args: any) {
       await recordUnderstanding(admin, taskId, data, feedback);
       await updateTaskAfterPrepared(admin, taskId, data);
       await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:email, action:'requester_revision_request_submitted', task_id:taskId, details:{ status:data?.status, requester_feedback:feedback, refresh_tencent_doc:Boolean(body.refresh_tencent_doc), affected_pages:data?.affected_pages || [], generation_started:false } });
-      const result = await autoQueueIfReady(admin, taskId, data);
-      const responseStatus = String(result?.status || '') === 'processing' ? 202 : 200;
-      return { handled:true, status:responseStatus, body:{ ok:true, ...result } };
+      return { handled:true, status:200, body:{ ok:true, ...data, generation_started:false } };
     }
 
     if (action === 'answer_content_revision_clarification') {
       const result = await continueRevisionAfterClarification(admin, task, taskId, body, auth, jwt);
-      return { handled:true, status:String(result?.status || '') === 'processing' ? 202 : 200, body:{ ok:true, ...result } };
+      return { handled:true, status:200, body:{ ok:true, ...result, generation_started:false } };
     }
 
     if (action === 'accept_current_revision') {
@@ -176,8 +153,11 @@ export async function handleTemplateWorkflowAction(args: any) {
     }
 
     if (action === 'generate_content_revision') {
-      const data = await queueContentRevision(admin, taskId, String(body.revision_id || ''), String(body.idempotency_key || ''));
-      await normalizeAiGenerationHistory(admin, taskId, data.revision, data.generations || []);
+      const revisionId = String(body.revision_id || '');
+      const revision = (await admin.from('uat_content_revisions').select('*').eq('id', revisionId).eq('task_id', taskId).single()).data;
+      if (!revision) throw new Error('CONTENT_REVISION_NOT_FOUND');
+      const data = await queueContentRevision(admin, taskId, revisionId, String(body.idempotency_key || ''));
+      await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:email, action:'ai_designer_content_revision_generation_started', task_id:taskId, details:{ revision_id:revisionId, revision_no:revision.revision_no, affected_pages:revision.affected_pages || [], generation_started:true } });
       return { handled:true, status:202, body:{ ok:true, ...data } };
     }
 
