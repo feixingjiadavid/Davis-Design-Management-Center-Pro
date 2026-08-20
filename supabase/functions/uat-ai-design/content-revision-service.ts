@@ -1,8 +1,9 @@
 import { buildRevisionManifest, diffFixedTemplatePages } from './framework-template-core.ts';
 import { inferExplicitFeedbackPages, inferFeedbackAffectedPages, mergeAffectedPages } from './revision-feedback.mjs';
 import { stableGenerationUuid } from './generation-idempotency.mjs';
+import { SEEDREAM_45, selectRevisionModel, seedreamLabel } from './content-revision-model-router.mjs';
 
-export const CONTENT_REVISION_MODEL = 'doubao-seedream-4-0-250828';
+export const CONTENT_REVISION_MODEL = SEEDREAM_45;
 export const CONTENT_REVISION_PROMPT_VERSION = 'seedream-template-revision-v1';
 
 export async function sha256Text(text: string) {
@@ -80,6 +81,8 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
   if ((mode === 'system_text' || mode === 'combined') && !systemContent) throw new Error('SYSTEM_CONTENT_REQUIRED');
 
   const latest = await latestRevision(admin, taskId);
+  const revisionRelation = String(payload?.revision_relation || '') === 'quality_retry' ? 'quality_retry' : 'new_requirement';
+  const selectedModel = selectRevisionModel({ relation: revisionRelation });
   const previousHash = String(latest?.new_content_hash || template.source_content_hash || '');
   const newHash = mode === 'tencent_doc'
     ? tencentHash
@@ -100,6 +103,8 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
       ...(task.workflow_context || {}),
       mode: 'content_revision',
       requester_feedback: systemContent,
+      revision_relation: revisionRelation,
+      selected_seedream_model: selectedModel,
       rule: '领导已通过的框架母版不可更换。需求方反馈是本轮最高优先级修改指令；即使腾讯文档未变化，也必须处理设计稿纠错类意见。',
     },
   };
@@ -148,6 +153,12 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
       requester_feedback: systemContent || null,
       content_diff_pages: diff.affectedPages,
       feedback_pages: feedbackPages,
+      revision_relation: revisionRelation,
+      relation_confidence: Number(payload?.revision_relation_confidence || 0),
+      relation_reason: String(payload?.revision_relation_reason || ''),
+      relation_source: String(payload?.revision_relation_source || ''),
+      selected_model: selectedModel,
+      model_route_version: 'seedream-revision-route-v1',
     },
     affected_pages: affectedPages,
     page_manifest: manifest,
@@ -163,6 +174,8 @@ export async function prepareContentRevision(admin: any, taskId: string, actorId
     analysis,
     affected_pages: affectedPages,
     reason: diff.reason || null,
+    selected_model: selectedModel,
+    revision_relation: revisionRelation,
   };
 }
 
@@ -183,6 +196,8 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
 
   const affected = Array.isArray(revision.affected_pages) ? revision.affected_pages.map(Number).filter(Boolean) : [];
   if (!affected.length) throw new Error('AFFECTED_PAGES_REQUIRED');
+  const relation = String(revision?.change_summary?.revision_relation || '') === 'quality_retry' ? 'quality_retry' : 'new_requirement';
+  const selectedModel = String(revision?.change_summary?.selected_model || selectRevisionModel({ relation }));
   const rows = await Promise.all(affected.map(async (pageIndex: number) => ({
     task_id: taskId,
     analysis_id: revision.analysis_id,
@@ -192,11 +207,18 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
     revision_id: revision.id,
     page_index: pageIndex,
     page_count: Number(template.page_count),
-    model: CONTENT_REVISION_MODEL,
+    model: selectedModel,
     prompt_version: CONTENT_REVISION_PROMPT_VERSION,
     idempotency_key: await stableGenerationUuid(`${key}:p${pageIndex}`),
     status: 'queued',
-    output: { run_id: key, queued_by: 'davis.design.ai@webank.com', revision_no: revision.revision_no },
+    output: {
+      run_id: key,
+      queued_by: 'davis.design.ai@webank.com',
+      revision_no: revision.revision_no,
+      revision_relation: relation,
+      selected_model: selectedModel,
+      selected_model_label: seedreamLabel(selectedModel),
+    },
   })));
   const inserted = await admin.from('uat_design_generations').insert(rows).select('*');
   if (inserted.error) throw new Error(inserted.error.message || inserted.error.details || JSON.stringify(inserted.error));
@@ -213,19 +235,25 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
     previous_content_hash: revision.previous_content_hash,
     new_content_hash: revision.new_content_hash,
     affected_pages: affected,
+    revision_relation: relation,
+    selected_model: selectedModel,
+    selected_model_label: seedreamLabel(selectedModel),
     operator: 'Davis AI设计师',
     generated_by: 'ai_designer',
     time: new Date().toISOString(),
   });
   await admin.from('test_tasks').update({
     status: 'processing',
-    summary_desc: `AI设计师正在基于已通过母版处理第 ${revision.revision_no} 次内容修改`,
+    summary_desc: `AI设计师正在使用 ${seedreamLabel(selectedModel)} 处理第 ${revision.revision_no} 次内容修改`,
     history_json: JSON.stringify(history),
   }).eq('id', taskId);
   return {
     status: 'processing',
     revision: { ...revision, status: 'generating' },
     generations: inserted.data || [],
+    selected_model: selectedModel,
+    selected_model_label: seedreamLabel(selectedModel),
+    revision_relation: relation,
     idempotent: false,
   };
 }
