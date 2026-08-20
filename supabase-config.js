@@ -58,6 +58,9 @@ if (typeof window !== 'undefined') {
   }
 
   if (page === 'task-detail-requester.html') {
+    import('./js/requester-shell-recovery-v1.js?v=requester-shell-recovery-v1-20260820')
+      .then(module => module.bootstrapRequesterShellRecoveryV1(supabase))
+      .catch(error => console.error('需求方独立壳层恢复失败:', error));
     import('./js/requester-bootstrap-recovery-v1.js?v=requester-bootstrap-recovery-v1')
       .then(module => module.bootstrapRequesterRecovery())
       .catch(error => console.error('需求方页面启动恢复模块加载失败:', error));
@@ -80,7 +83,7 @@ if (typeof window !== 'undefined') {
 
   if (page === 'manager-workspace.html') {
     import('./js/manager-formal-sync-v2.js?v=manager-formal-sync-v2')
-      .then(module => module.bootstrapManagerFormalSync(supabase))
+      .then(module => module.bootstrapManagerFormalSyncV2(supabase))
       .catch(error => console.error('正式管理台数据同步修复失败:', error));
     import('./js/formal-framework-approval-route.js?v=formal-framework-approval-v1')
       .then(module => module.bootstrapFormalFrameworkApprovalRoute())
