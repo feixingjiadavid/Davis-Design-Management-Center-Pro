@@ -4,6 +4,7 @@ import { acceptCurrentRevision, checkContentUpdate, prepareContentRevision, queu
 import { submitRequesterRevisionRequest } from './content-revision-request.mjs';
 import { ingestTaskSources } from './source-service.ts';
 import { analyzeRequirement, confirmUnderstanding } from './analysis-service.ts';
+import { saveAiProcessingAck, saveRequesterAnswers } from './clarification-chat.ts';
 import { assertTemplateWorkflowActor } from './template-workflow-permissions.mjs';
 
 const LEADER = 'uat.leader@webank.com';
@@ -12,12 +13,22 @@ const AI_DESIGNER = 'davis.design.ai@webank.com';
 
 export const TEMPLATE_WORKFLOW_ACTIONS = new Set([
   'approve_framework','reject_framework','generate_framework_revision','check_content_update',
-  'prepare_content_revision','generate_content_revision','submit_content_revision_request','accept_current_revision',
+  'prepare_content_revision','generate_content_revision','submit_content_revision_request',
+  'answer_content_revision_clarification','accept_current_revision',
 ]);
 
 export function isTemplateWorkflowAction(action: string) { return TEMPLATE_WORKFLOW_ACTIONS.has(String(action || '')); }
 function actorLabel(email: string) { if (email === LEADER) return 'UAT 领导'; if (email === AI_DESIGNER) return 'Davis AI设计师'; return 'UAT 需求方'; }
 function parseHistory(task: any) { try { const h = JSON.parse(String(task?.history_json || '[]')); return Array.isArray(h) ? h : []; } catch { return []; } }
+function latestRevisionFeedback(history: any[]) {
+  for (let index = (history || []).length - 1; index >= 0; index -= 1) {
+    const item = history[index] || {};
+    if (!['requester_revision_feedback','reject_draft'].includes(String(item.action || ''))) continue;
+    const feedback = String(item.reply || item.requester_feedback || '').trim();
+    if (feedback) return { feedback, refresh_tencent_doc:Boolean(item.refresh_tencent_doc), time:item.time || item.created_at || '' };
+  }
+  return null;
+}
 
 async function appendHistory(admin: any, taskId: string, items: any[]) {
   const current = (await admin.from('test_tasks').select('history_json').eq('id', taskId).single()).data;
@@ -77,6 +88,35 @@ async function autoQueueIfReady(admin: any, taskId: string, data: any) {
   return { ...queued, prepared:data, generation_started:true };
 }
 
+async function continueRevisionAfterClarification(admin: any, task: any, taskId: string, body: any, auth: any, jwt: string) {
+  const history = parseHistory((await admin.from('test_tasks').select('history_json').eq('id', taskId).single()).data || task);
+  const context = latestRevisionFeedback(history);
+  if (!context?.feedback) throw new Error('REQUESTER_REVISION_FEEDBACK_REQUIRED');
+  const clientRequestId = String(body.client_request_id || crypto.randomUUID()).trim();
+  await saveRequesterAnswers(admin, taskId, body.answers || [], String(body.message || ''), clientRequestId, auth.user.id);
+  await saveAiProcessingAck(admin, taskId, clientRequestId, 'answer_clarifications');
+  await appendHistory(admin, taskId, [{
+    action:'content_revision_clarification_answered', operator:actorLabel(String(auth.user.email || '').toLowerCase()),
+    time:new Date().toISOString(), reply:String(body.message || '').trim() || (body.answers || []).map((item:any)=>String(item?.answer || '')).filter(Boolean).join('；'),
+    requester_feedback:context.feedback, generation_started:false,
+  }]);
+  await admin.from('test_tasks').update({ status:'reviewing', summary_desc:'需求方已补充本轮修改信息，AI设计师正在继续真实理解' }).eq('id', taskId);
+  const prepared = await prepareContentRevision(admin, taskId, auth.user.id, {
+    source_mode:context.refresh_tencent_doc ? 'combined' : 'system_text',
+    system_content:context.feedback,
+    requester_feedback:context.feedback,
+    use_tencent_doc:context.refresh_tencent_doc,
+    user_jwt:jwt,
+  }, { analyze:analyzeRequirement });
+  await recordUnderstanding(admin, taskId, prepared, context.feedback);
+  await updateTaskAfterPrepared(admin, taskId, prepared);
+  await admin.from('uat_audit_log').insert({
+    actor_id:auth.user.id, actor_email:auth.user.email, action:'content_revision_clarification_answered', task_id:taskId,
+    details:{ status:prepared?.status, requester_feedback:context.feedback, affected_pages:prepared?.affected_pages || [], generation_started:false },
+  });
+  return await autoQueueIfReady(admin, taskId, prepared);
+}
+
 export async function handleTemplateWorkflowAction(args: any) {
   const { admin, task, taskId, action, body, auth, jwt } = args;
   const email = String(auth?.user?.email || '').toLowerCase();
@@ -102,6 +142,11 @@ export async function handleTemplateWorkflowAction(args: any) {
       const result = await autoQueueIfReady(admin, taskId, data);
       const responseStatus = String(result?.status || '') === 'processing' ? 202 : 200;
       return { handled:true, status:responseStatus, body:{ ok:true, ...result } };
+    }
+
+    if (action === 'answer_content_revision_clarification') {
+      const result = await continueRevisionAfterClarification(admin, task, taskId, body, auth, jwt);
+      return { handled:true, status:String(result?.status || '') === 'processing' ? 202 : 200, body:{ ok:true, ...result } };
     }
 
     if (action === 'accept_current_revision') {
