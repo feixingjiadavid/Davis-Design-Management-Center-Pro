@@ -1,4 +1,5 @@
 const DEFAULT_MODULE_URLS = [
+  'https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/+esm',
   'https://esm.sh/@supabase/supabase-js@2.110.9?bundle',
 ];
@@ -40,11 +41,16 @@ export function defaultLoadScript(url, globalObject = globalThis) {
 export async function loadSupabaseSdk({
   moduleUrls = DEFAULT_MODULE_URLS,
   umdUrls = DEFAULT_UMD_URLS,
-  timeoutMs = 5000,
+  timeoutMs = 8000,
   importModule = (url) => import(url),
   loadScript = defaultLoadScript,
   globalObject = globalThis,
 } = {}) {
+  const existing = globalObject?.supabase?.createClient;
+  if (typeof existing === 'function') {
+    return { createClient: existing, source: 'window.supabase', mode: 'umd-existing' };
+  }
+
   const failures = [];
 
   for (const url of moduleUrls) {
