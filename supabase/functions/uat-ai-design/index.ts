@@ -18,8 +18,7 @@ const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), 
 const AI_EMAIL = "davis.design.ai@webank.com";
 const REQUESTER_EMAIL = "uat.requester@webank.com";
 const LEGACY_REQUESTER_ACTIONS = new Set([
-  "auto_analyze", "answer_clarifications", "delegate_to_ai", "analyze", "reanalyze", "read_sources",
-  "answer_clarification", "confirm_understanding",
+  "answer_clarifications", "delegate_to_ai",
 ]);
 
 Deno.serve(async (request) => {
