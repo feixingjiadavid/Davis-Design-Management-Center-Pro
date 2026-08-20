@@ -83,7 +83,7 @@ if (typeof window !== 'undefined') {
 
   if (page === 'manager-workspace.html') {
     import('./js/manager-formal-sync-v2.js?v=manager-formal-sync-v2')
-      .then(module => module.bootstrapManagerFormalSyncV2(supabase))
+      .then(module => module.bootstrapManagerFormalSync(supabase))
       .catch(error => console.error('正式管理台数据同步修复失败:', error));
     import('./js/formal-framework-approval-route.js?v=formal-framework-approval-v1')
       .then(module => module.bootstrapFormalFrameworkApprovalRoute())
