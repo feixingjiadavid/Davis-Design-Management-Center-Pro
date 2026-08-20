@@ -46,7 +46,7 @@ if (typeof window !== 'undefined') {
     .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
 
   if (page === 'ai-designer-workspace.html') {
-    import('./js/seedream-drive-preview-ui-v7.js?v=drive-preview-ui-v8')
+    import('./js/seedream-drive-preview-ui-v7.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
       .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
     import('./js/ai-formal-pipeline-v1.js?v=ai-formal-pipeline-v2-preserve-history')
@@ -64,19 +64,19 @@ if (typeof window !== 'undefined') {
     import('./js/requester-bootstrap-recovery-v1.js?v=requester-bootstrap-recovery-v1')
       .then(module => module.bootstrapRequesterRecovery())
       .catch(error => console.error('需求方页面启动恢复模块加载失败:', error));
-    import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12c')
+    import('./js/requester-demo-view-v12.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
-    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v16-45-manifest')
+    import('./js/requester-delivery-view-v13.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
       .catch(error => console.error('当前可验收版本加载失败:', error));
-    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v3-revision-history-only')
+    import('./js/requester-ai-stability-v1.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
     import('./js/requester-revision-loop-v1.js?v=revision-loop-v1-20260820')
       .then(module => module.bootstrapRequesterRevisionLoopV1(supabase))
       .catch(error => console.error('需求方内容修改循环加载失败:', error));
-    import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
+    import('./js/framework-hd-review-v1.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapFrameworkHdReview(supabase))
       .catch(error => console.error('高清框架审核视图加载失败:', error));
   }
