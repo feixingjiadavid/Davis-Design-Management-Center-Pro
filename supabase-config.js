@@ -1,5 +1,5 @@
 // supabase-config.js
-import { loadSupabaseSdk } from './js/supabase-sdk-loader.js?v=uat-boot-fallback-20260814';
+import { loadSupabaseSdk } from './js/supabase-sdk-loader.js?v=uat-sdk-proxy-v1';
 import './js/uat-formal-role-bridge.js?v=formal-role-bridge-v1';
 
 const supabaseUrl = 'https://bjzfkwxrvytgphvgwltl.supabase.co';
