@@ -12,7 +12,9 @@ export function resolveGenerationStrategy({ row = {}, templatePage = null, style
     return {
       mode,
       promptKind: 'template_revision',
-      images: [anchor, ...urls(assets), ...urls(styleReferences)],
+      // 内容改版是“局部编辑”，不是再次创作。只把已通过母版作为唯一图像输入，
+      // 避免风格参考/Logo/IP 素材再次进入模型后被重新解释、改色或变形。
+      images: [anchor],
       completionTarget: 'reviewing',
       promptVersion: 'seedream-template-revision-v1',
     };
