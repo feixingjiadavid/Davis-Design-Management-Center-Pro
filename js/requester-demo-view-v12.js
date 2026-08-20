@@ -1,4 +1,4 @@
-import { DEMO_MODEL, DEMO_VERSION, getDrivePreviewObjectUrl, selectCurrentDemoPages } from './seedream-drive-preview-client.mjs?v=requester-demo-view-v12b';
+import { DEMO_MODEL, DEMO_VERSION, getDrivePreviewObjectUrl, selectCurrentDemoPages } from './seedream-drive-preview-client.mjs?v=requester-demo-view-v12c';
 
 let supabase = null;
 let taskId = '';
@@ -95,6 +95,15 @@ async function loadTask() {
   return data;
 }
 
+async function loadTemplate() {
+  const { data, error } = await supabase.from('uat_framework_templates')
+    .select('id,framework_version,approved_by_label,approved_at')
+    .eq('task_id', taskId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
 function readyRows(rows) {
   return (rows || [])
     .filter((row) => ['ready', 'confirmed'].includes(String(row.status)))
@@ -105,9 +114,10 @@ function totalPages(rows) {
   return Math.max(3, ...(rows || []).map((row) => Number(row.page_count || 0)));
 }
 
-function snapshotOf(task, rows) {
+function snapshotOf(task, template, rows) {
   return JSON.stringify({
     status: task?.status || '',
+    template: template?.id || '',
     pages: rows.map((row) => ({
       id: row.id,
       page: row.page_index,
@@ -117,20 +127,28 @@ function snapshotOf(task, rows) {
   });
 }
 
-function statusCopy(status) {
+function statusCopy(status, hasTemplate) {
   if (status === 'pending_approval') return '待领导审核框架方案';
-  if (status === 'processing') return '领导已通过 · 正稿制作中';
-  if (status === 'rejected') return '领导已驳回 · 等待修改';
+  if (status === 'processing' && hasTemplate) return '母版已通过 · 内容修改中';
+  if (status === 'processing') return '框架方案处理中';
+  if (status === 'rejected' && hasTemplate) return '母版已通过 · 待内容修改';
+  if (status === 'rejected') return '领导已驳回框架 · 等待调整';
+  if (status === 'reviewing' && hasTemplate) return '母版已通过 · 待需求方验收';
   if (status === 'reviewing') return '正式稿待需求方验收';
   return '框架方案处理中';
 }
 
-function renderShell(host, task, rows) {
+function renderShell(host, task, template, rows) {
   const ready = readyRows(rows);
   const total = totalPages(rows);
-  const subtitle = isLeaderView()
-    ? '领导审批视角：请查看框架方案，并使用右侧正式审批面板通过或驳回。'
-    : '需求方查看视角：此阶段仅查看框架方案，不参与审批。';
+  const hasTemplate = Boolean(template?.id);
+  const subtitle = hasTemplate
+    ? (isLeaderView()
+      ? '该 Demo 已由领导审核通过并冻结为设计母版；后续内容修改不再进入领导审核。'
+      : '领导已审核并冻结该 Demo 为设计母版；后续只能在母版内修改内容，不能推倒重来。')
+    : (isLeaderView()
+      ? '领导审批视角：请查看框架方案，并使用右侧正式审批面板通过或驳回。'
+      : '需求方查看视角：此阶段仅查看框架方案，不参与审批。');
   host.innerHTML = `
     <div class="flex items-start justify-between gap-4 mb-5">
       <div>
@@ -138,8 +156,9 @@ function renderShell(host, task, rows) {
         <p class="text-xs text-zinc-500 mt-1">${esc(subtitle)}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
+        ${hasTemplate ? '<span class="text-xs px-2.5 py-1 rounded-full border border-indigo-500/20 bg-indigo-500/10 text-indigo-300">母版已锁定</span>' : ''}
         <span class="text-xs px-2.5 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">${ready.length}/${total} 已归档</span>
-        <span class="text-xs px-2.5 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-300">${esc(statusCopy(task?.status))}</span>
+        <span class="text-xs px-2.5 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-300">${esc(statusCopy(task?.status,hasTemplate))}</span>
       </div>
     </div>
     <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -193,13 +212,13 @@ async function sync(force = false) {
   syncing = true;
   try {
     hideLegacyDemoBlocks();
-    const [task, rows] = await Promise.all([loadTask(), loadRows()]);
+    const [task, template, rows] = await Promise.all([loadTask(), loadTemplate(), loadRows()]);
     const host = ensureHost();
     if (!host) return;
-    const snapshot = snapshotOf(task, rows);
+    const snapshot = snapshotOf(task, template, rows);
     if (!force && snapshot === lastSnapshot && host.firstElementChild) return;
     lastSnapshot = snapshot;
-    const ready = renderShell(host, task, rows);
+    const ready = renderShell(host, task, template, rows);
     await hydrate(host, ready);
     hideLegacyDemoBlocks();
   } catch (error) {
