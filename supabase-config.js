@@ -1,5 +1,5 @@
 // supabase-config.js
-import { loadSupabaseSdk } from './js/supabase-sdk-loader.js?v=uat-sdk-proxy-v1';
+import { loadSupabaseSdk } from './js/supabase-sdk-loader.js?v=uat-sdk-proxy-v2-umd-first';
 import './js/uat-formal-role-bridge.js?v=formal-role-bridge-v1';
 
 const supabaseUrl = 'https://bjzfkwxrvytgphvgwltl.supabase.co';
@@ -64,7 +64,7 @@ if (typeof window !== 'undefined') {
     import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12c')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
-    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v15-current-uat-preview')
+    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v16-45-manifest')
       .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
       .catch(error => console.error('当前可验收版本加载失败:', error));
     import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v3-revision-history-only')
