@@ -52,6 +52,9 @@ if (typeof window !== 'undefined') {
     import('./js/ai-formal-pipeline-v1.js?v=ai-formal-pipeline-v1')
       .then(module => module.bootstrapAiFormalPipeline(supabase))
       .catch(error => console.error('AI 正式流程条加载失败:', error));
+    import('./js/ai-designer-content-revision-mode-v1.js?v=ai-content-revision-v1')
+      .then(module => module.bootstrapAiDesignerContentRevisionModeV1(supabase))
+      .catch(error => console.error('AI 已锁母版内容修改模式加载失败:', error));
   }
 
   if (page === 'task-detail-requester.html') {
@@ -61,10 +64,10 @@ if (typeof window !== 'undefined') {
     import('./js/requester-delivery-view-v13.js?v=requester-delivery-v13')
       .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
       .catch(error => console.error('当前可验收版本加载失败:', error));
-    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v1')
+    import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v2-no-generation')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
-    import('./js/requester-framework-revision-flow-v3.js?v=requester-template-revision-v4')
+    import('./js/requester-framework-revision-flow-v3.js?v=requester-template-revision-v5-permissions')
       .then(module => module.bootstrapRequesterFrameworkRevisionFlowV3(supabase))
       .catch(error => console.error('需求方母版/内容改版流程加载失败:', error));
     import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
@@ -74,7 +77,7 @@ if (typeof window !== 'undefined') {
 
   if (page === 'manager-workspace.html') {
     import('./js/manager-formal-sync-v2.js?v=manager-formal-sync-v2')
-      .then(module => module.bootstrapManagerFormalSync(supabase))
+      .then(module => module.bootstrapManagerFormalSyncV2(supabase))
       .catch(error => console.error('正式管理台数据同步修复失败:', error));
     import('./js/formal-framework-approval-route.js?v=formal-framework-approval-v1')
       .then(module => module.bootstrapFormalFrameworkApprovalRoute())
