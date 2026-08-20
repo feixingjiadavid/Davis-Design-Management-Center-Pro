@@ -1,11 +1,12 @@
 import { activeRevision, feedbackCoveredByRevision, latestRequesterFeedback, nextRevisionNo, parseHistory, revisionStage } from './revision-cycle-core.mjs?v=revision-loop-v1';
-import { prepareContentRevision } from './ai-requirement-client.js?v=revision-loop-v2';
+import { generateContentRevision, prepareContentRevision } from './ai-requirement-client.js?v=revision-loop-v2';
 
 let sb = null;
 let timer = null;
 let busy = false;
 let lastKey = '';
-const attempts = new Map();
+const analysisAttempts = new Map();
+const generationAttempts = new Map();
 const errors = new Map();
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
@@ -52,10 +53,9 @@ function revisionTimeline(revisions, feedback) {
     const deliveredAt = revision.generated_at || '';
     return `<div class="rounded-xl border border-white/10 bg-slate-950/60 p-4"><div class="flex items-center justify-between gap-3"><p class="text-sm font-bold text-white">第 ${Number(revision.revision_no||0)} 次修改</p><span class="text-xs ${stage.key==='accepted'?'text-emerald-300':stage.key==='failed'?'text-rose-300':stage.key==='generating'?'text-violet-300':'text-blue-300'}">${esc(stage.label)}</span></div><p class="text-xs text-slate-500 mt-2">影响页：${esc(pages)}</p>${text?`<p class="text-xs text-slate-300 mt-2 leading-relaxed">需求方：${esc(text)}</p>`:''}<div class="mt-2 text-[10px] text-slate-600">${understoodAt?`理解/建轮：${new Date(understoodAt).toLocaleString()}`:''}${deliveredAt?` · 交付：${new Date(deliveredAt).toLocaleString()}`:''}</div></div>`;
   });
-  if (pending) rows.push(`<div class="rounded-xl border border-blue-500/20 bg-blue-950/20 p-4"><div class="flex items-center justify-between"><p class="text-sm font-bold text-blue-200">第 ${nextRevisionNo(revisions)} 次修改</p><span class="text-xs text-blue-300">${stateLabelForPending()}</span></div><p class="text-xs text-slate-300 mt-2 leading-relaxed">需求方：${esc(feedback.feedback)}</p></div>`);
+  if (pending) rows.push(`<div class="rounded-xl border border-blue-500/20 bg-blue-950/20 p-4"><div class="flex items-center justify-between"><p class="text-sm font-bold text-blue-200">第 ${nextRevisionNo(revisions)} 次修改</p><span class="text-xs text-blue-300">AI 理解/追问中</span></div><p class="text-xs text-slate-300 mt-2 leading-relaxed">需求方：${esc(feedback.feedback)}</p></div>`);
   return `<div class="space-y-3">${rows.join('')}</div>`;
 }
-function stateLabelForPending() { return 'AI 理解/追问中'; }
 
 function arrayLines(value, fallback = '') {
   const items = Array.isArray(value) ? value.filter(Boolean) : [];
@@ -86,7 +86,7 @@ function currentStatus(context) {
   if (!latest && feedback) return `<div class="rounded-xl border border-blue-500/25 bg-blue-950/20 p-5"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-blue-200">正在理解需求方最新意见</p><p class="text-xs text-slate-400 mt-1">${esc(feedback.feedback)}</p></div></div></div>`;
   if (!latest) return '<div class="rounded-xl border border-slate-700 bg-slate-900/70 p-5"><p class="text-sm text-slate-300">母版已锁定，等待需求方提交新的修改意见。</p></div>';
   const status = String(latest.status || '');
-  if (status === 'content_ready') return `<div class="rounded-xl border border-blue-500/25 bg-blue-950/20 p-5"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-blue-200">AI 已理解，正在进入第 ${latest.revision_no} 次修改生成</p><p class="text-xs text-slate-400 mt-1">需要修改 ${esc(affectedText(latest))}；生图动作由 AI 设计师自动执行。</p></div></div></div>`;
+  if (status === 'content_ready') return `<div class="rounded-xl border border-blue-500/25 bg-blue-950/20 p-5"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-blue-200">AI 已理解第 ${latest.revision_no} 次修改</p><p class="text-xs text-slate-400 mt-1">需要修改 ${esc(affectedText(latest))}；现在由 AI 设计师账号自动调用生成。</p></div></div></div>`;
   if (status === 'generation_requested' || status === 'generating') return `<div class="rounded-xl border border-violet-500/25 bg-violet-950/15 p-5"><div class="flex items-center gap-3"><div class="spin"></div><div><p class="text-sm font-bold text-violet-200">第 ${latest.revision_no} 次修改生成中</p><p class="text-xs text-slate-400 mt-1">正在修改 ${esc(affectedText(latest))}；未受影响页复用上一版本。</p></div></div></div>`;
   if (status === 'ready_for_review') return `<div class="rounded-xl border border-emerald-500/25 bg-emerald-950/15 p-5"><p class="text-sm font-bold text-emerald-300">第 ${latest.revision_no} 次修改已交付需求方验收</p><p class="text-xs text-slate-400 mt-2">如果需求方继续补充意见，将自动进入第 ${Number(latest.revision_no)+1} 次修改循环；不会回领导审核。</p></div>`;
   if (status === 'accepted') return `<div class="rounded-xl border border-emerald-500/25 bg-emerald-950/15 p-5"><p class="text-sm font-bold text-emerald-300">需求方已验收，第 ${latest.revision_no} 次修改为最终版本</p></div>`;
@@ -101,7 +101,7 @@ function render(context) {
   const currentRound = context.latest?.revision_no || nextRevisionNo(context.revisions);
   const feedback = context.feedback?.feedback || String(context.latest?.system_content || '').trim() || '暂无新的修改意见';
   detail.dataset.aiRevisionLoop = 'v2';
-  detail.innerHTML = `<div data-ai-revision-loop-root="v2"><div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">${esc(context.task.id)}</p><h2 class="text-2xl font-bold text-white mt-2">${esc(context.task.title || '')}</h2><p class="text-sm text-slate-400 mt-2">首次流程进度继续保留在顶部；当前进入第 ${currentRound} 次内容修改循环。</p></div><span class="px-3 py-1.5 rounded-full bg-emerald-950 text-emerald-300 text-xs">母版已锁定 · 不再回领导审核</span></div><div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5"><div class="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-5"><p class="text-sm font-bold text-emerald-300">首次框架审批结果永久保留</p><p class="text-xs text-slate-400 mt-2">领导已通过母版 ${esc(context.template.framework_version || '')}。后续所有轮次只允许修改内容和受影响页。</p></div><div class="rounded-xl border border-blue-500/25 bg-blue-950/15 p-5"><p class="text-xs text-blue-300 font-bold">需求方本轮最新意见</p><p class="text-base text-white leading-7 mt-3 whitespace-pre-wrap">${esc(feedback)}</p>${context.feedback?.refresh_tencent_doc?'<p class="text-xs text-cyan-300 mt-3">需求方标记：腾讯文档已更新，AI 同时读取最新内容。</p>':''}</div>${analysisHtml(context)}${currentStatus(context)}</div><div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-5"><p class="text-sm font-bold text-white">当前循环规则</p><ul class="text-xs text-slate-400 mt-3 space-y-2"><li>• 需求方只提交修改意见/回答 AI 问题</li><li>• AI 真实理解并判断 affected pages</li><li>• 需要生图时由 AI 设计师自动调用生成</li><li>• 完成后直接回需求方验收</li><li>• 未验收则进入下一次修改循环</li></ul></div><div class="rounded-xl bg-slate-950 border border-white/10 p-5"><div class="flex items-center justify-between"><p class="text-sm font-bold text-white">历次修改记录</p><span class="text-xs text-slate-500">${context.revisions.length} 个已建轮次</span></div><div class="mt-4">${revisionTimeline(context.revisions,context.feedback)}</div></div></div></div></div>`;
+  detail.innerHTML = `<div data-ai-revision-loop-root="v2"><div class="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5"><div><p class="text-xs font-mono text-blue-400">${esc(context.task.id)}</p><h2 class="text-2xl font-bold text-white mt-2">${esc(context.task.title || '')}</h2><p class="text-sm text-slate-400 mt-2">首次流程进度继续保留在顶部；当前进入第 ${currentRound} 次内容修改循环。</p></div><span class="px-3 py-1.5 rounded-full bg-emerald-950 text-emerald-300 text-xs">母版已锁定 · 不再回领导审核</span></div><div class="grid xl:grid-cols-[1fr_420px] gap-6 mt-6"><div class="space-y-5"><div class="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-5"><p class="text-sm font-bold text-emerald-300">首次框架审批结果永久保留</p><p class="text-xs text-slate-400 mt-2">领导已通过母版 ${esc(context.template.framework_version || '')}。后续所有轮次只允许修改内容和受影响页。</p></div><div class="rounded-xl border border-blue-500/25 bg-blue-950/15 p-5"><p class="text-xs text-blue-300 font-bold">需求方本轮最新意见</p><p class="text-base text-white leading-7 mt-3 whitespace-pre-wrap">${esc(feedback)}</p>${context.feedback?.refresh_tencent_doc?'<p class="text-xs text-cyan-300 mt-3">需求方标记：腾讯文档已更新，AI 同时读取最新内容。</p>':''}</div>${analysisHtml(context)}${currentStatus(context)}</div><div class="space-y-5"><div class="rounded-xl bg-slate-950 border border-white/10 p-5"><p class="text-sm font-bold text-white">当前循环规则</p><ul class="text-xs text-slate-400 mt-3 space-y-2"><li>• 需求方只提交修改意见/回答 AI 问题</li><li>• AI 真实理解并判断 affected pages</li><li>• content_ready 后仅 AI 设计师账号自动调用生成</li><li>• 完成后直接回需求方验收</li><li>• 未验收则进入下一次修改循环</li></ul></div><div class="rounded-xl bg-slate-950 border border-white/10 p-5"><div class="flex items-center justify-between"><p class="text-sm font-bold text-white">历次修改记录</p><span class="text-xs text-slate-500">${context.revisions.length} 个已建轮次</span></div><div class="mt-4">${revisionTimeline(context.revisions,context.feedback)}</div></div></div></div></div>`;
 }
 
 function keyOf(context) {
@@ -112,8 +112,8 @@ async function processUncoveredFeedback(context) {
   if (!context.template || !context.feedback || feedbackCoveredByRevision(context.feedback, context.latest)) return;
   if (['completed','archived','needs_input'].includes(String(context.task.status || '')) || context.openClarifications?.length || busy) return;
   const attemptKey = `${context.feedback.time}:${context.feedback.feedback}`;
-  if (attempts.get(context.task.id) === attemptKey) return;
-  attempts.set(context.task.id, attemptKey);
+  if (analysisAttempts.get(context.task.id) === attemptKey) return;
+  analysisAttempts.set(context.task.id, attemptKey);
   busy = true;
   errors.delete(context.task.id);
   try {
@@ -125,9 +125,21 @@ async function processUncoveredFeedback(context) {
       use_tencent_doc: refresh,
       refresh_tencent_doc: refresh,
     });
-  } catch (error) {
-    errors.set(context.task.id, error instanceof Error ? error.message : String(error));
-  } finally { busy = false; }
+  } catch (error) { errors.set(context.task.id, error instanceof Error ? error.message : String(error)); }
+  finally { busy = false; }
+}
+
+async function generateReadyRevision(context) {
+  const revision = context.latest;
+  if (!revision || String(revision.status || '') !== 'content_ready' || busy) return;
+  const key = String(revision.id || '');
+  if (!key || generationAttempts.get(context.task.id) === key) return;
+  generationAttempts.set(context.task.id, key);
+  busy = true;
+  errors.delete(context.task.id);
+  try { await generateContentRevision(sb, context.task.id, revision.id); }
+  catch (error) { errors.set(context.task.id, error instanceof Error ? error.message : String(error)); }
+  finally { busy = false; }
 }
 
 async function sync(force = false) {
@@ -140,7 +152,8 @@ async function sync(force = false) {
     const key = keyOf(context);
     const ownershipLost = !document.getElementById('detail')?.querySelector('[data-ai-revision-loop-root="v2"]');
     if (force || key !== lastKey || ownershipLost) { lastKey = key; render(context); }
-    await processUncoveredFeedback(context);
+    if (String(context.latest?.status || '') === 'content_ready') await generateReadyRevision(context);
+    else await processUncoveredFeedback(context);
   } catch (error) { console.error('AI revision loop v2 同步失败:', error); }
 }
 
