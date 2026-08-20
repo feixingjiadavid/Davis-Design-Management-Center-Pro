@@ -161,11 +161,11 @@
     <script src="./js/requester-init-guard-v2.js?v=requester-hardboot-v4"></script>
     <script src="https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy?format=umd&v=20260820-v2"></script>
     <script type="module">
-        import { supabase } from './supabase-config.js?v=requester-bootstrap-v6-hardboot';
+        import { supabase } from './supabase-config.js?v=requester-bootstrap-v7-all-stages-lazy';
         import * as aiRequirementClient from './js/ai-requirement-client.js?v=requester-template-revision-v4';
         import * as aiClarificationChat from './js/ai-clarification-chat.js?v=requester-drive-preview-v10';
-        import { bootstrapRequesterDemoReviewV10 } from './js/requester-demo-review-v10.js?v=requester-template-revision-v4';
-        import { bootstrapRequesterShellRecoveryV1 } from './js/requester-shell-recovery-v1.js?v=requester-shell-recovery-v1-20260820';
+        import { bootstrapRequesterDemoReviewV10 } from './js/requester-demo-review-v10.js?v=all-stages-lazy-v1';
+        import { bootstrapRequesterShellRecoveryV1 } from './js/requester-shell-recovery-v1.js?v=all-stages-lazy-v1';
         window.supabase = supabase;
         window.aiRequirementClient = aiRequirementClient;
         window.aiClarificationChat = aiClarificationChat;
