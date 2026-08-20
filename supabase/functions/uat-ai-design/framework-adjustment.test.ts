@@ -12,6 +12,7 @@ const base = {
       { action: 'reject_framework', version: 'v-1', reply: '不合适' },
     ]),
   }],
+  uat_framework_templates: [],
   uat_framework_adjustments: [],
   uat_design_generations: [],
 };
@@ -42,6 +43,15 @@ Deno.test('wrong task state is rejected', async () => {
 Deno.test('missing idempotency key is rejected', async () => {
   const admin = createFakeAdmin(base);
   await assert.rejects(() => generateFrameworkRevision(admin, 'T1', 'u1', { requester_direction: '改方向' }, deps), /IDEMPOTENCY_KEY_REQUIRED/);
+});
+
+Deno.test('approved template permanently blocks requester framework regeneration', async () => {
+  const seed = structuredClone(base);
+  seed.uat_framework_templates.push({ id: 'tpl1', task_id: 'T1' });
+  const admin = createFakeAdmin(seed);
+  await assert.rejects(() => generateFrameworkRevision(admin, 'T1', 'u1', { requester_direction: '推倒重来', idempotency_key: 'run1' }, deps), /FRAMEWORK_TEMPLATE_LOCKED_CONTENT_REVISION_ONLY/);
+  assert.equal(admin.countInserts('uat_framework_adjustments'), 0);
+  assert.equal(admin.countInserts('uat_design_generations'), 0);
 });
 
 Deno.test('valid submission stores one adjustment and queues one page row per page', async () => {
