@@ -1,5 +1,6 @@
 import { buildRevisionManifest, diffFixedTemplatePages } from './framework-template-core.ts';
 import { inferExplicitFeedbackPages, inferFeedbackAffectedPages, mergeAffectedPages } from './revision-feedback.mjs';
+import { stableGenerationUuid } from './generation-idempotency.mjs';
 
 export const CONTENT_REVISION_MODEL = 'doubao-seedream-4-0-250828';
 export const CONTENT_REVISION_PROMPT_VERSION = 'seedream-template-revision-v1';
@@ -182,7 +183,7 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
 
   const affected = Array.isArray(revision.affected_pages) ? revision.affected_pages.map(Number).filter(Boolean) : [];
   if (!affected.length) throw new Error('AFFECTED_PAGES_REQUIRED');
-  const rows = affected.map((pageIndex: number) => ({
+  const rows = await Promise.all(affected.map(async (pageIndex: number) => ({
     task_id: taskId,
     analysis_id: revision.analysis_id,
     kind: 'final',
@@ -193,12 +194,12 @@ export async function queueContentRevision(admin: any, taskId: string, revisionI
     page_count: Number(template.page_count),
     model: CONTENT_REVISION_MODEL,
     prompt_version: CONTENT_REVISION_PROMPT_VERSION,
-    idempotency_key: `${key}:p${pageIndex}`,
+    idempotency_key: await stableGenerationUuid(`${key}:p${pageIndex}`),
     status: 'queued',
     output: { run_id: key, queued_by: 'davis.design.ai@webank.com', revision_no: revision.revision_no },
-  }));
+  })));
   const inserted = await admin.from('uat_design_generations').insert(rows).select('*');
-  if (inserted.error) throw inserted.error;
+  if (inserted.error) throw new Error(inserted.error.message || inserted.error.details || JSON.stringify(inserted.error));
   await admin.from('uat_content_revisions').update({ status: 'generating' }).eq('id', revisionId);
 
   const task = (await admin.from('test_tasks').select('*').eq('id', taskId).single()).data;
