@@ -1,29 +1,237 @@
-import { buildRequesterRevisionRequest, isLeaderUser, isRequesterUser, selectRequesterFlowState } from './requester-framework-revision-core.mjs?v=requester-template-revision-v4';
+import { buildRequesterRevisionRequest, isRequesterUser, selectRequesterFlowState } from './requester-framework-revision-core.mjs?v=requester-template-revision-v5';
 
-let sb=null,taskId='',state=null,timer=null,lastDbKey='',editorOpen=false,busy=false;
-let oldApprove=null,oldReject=null;
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
-const user=()=>{try{return JSON.parse(localStorage.getItem('activeUserObj')||'{}')}catch{return{}}};
-const parseHistory=raw=>{if(Array.isArray(raw))return raw;try{const v=JSON.parse(String(raw||'[]'));return Array.isArray(v)?v:[]}catch{return[]}};
-const panel=()=>document.getElementById('smart-action-panel');
-const api=()=>window.aiRequirementClient;
-const toast=(t,m,k='success')=>window.showToast?window.showToast(t,m,k):console.log(t,m);
-const latestRequesterReject=history=>[...(history||[])].reverse().find(x=>x?.action==='reject_draft')||null;
+let sb = null;
+let taskId = '';
+let state = null;
+let timer = null;
+let lastDbKey = '';
+let editorOpen = false;
+let busy = false;
 
-async function load(){const[t,p,r]=await Promise.all([sb.from('test_tasks').select('*').eq('id',taskId).single(),sb.from('uat_framework_templates').select('*').eq('task_id',taskId).maybeSingle(),sb.from('uat_content_revisions').select('*').eq('task_id',taskId).order('revision_no',{ascending:false})]);if(t.error)throw t.error;if(p.error)throw p.error;if(r.error)throw r.error;const task=t.data,template=p.data||null,revisions=r.data||[],history=parseHistory(task.history_json);return{task,template,revisions,history,flow:selectRequesterFlowState({task,template,revisions,history})}}
-function dbKey(s){const rr=latestRequesterReject(s.history);return JSON.stringify({status:s.task.status,summary:s.task.summary_desc,template:s.template?.id||'',revision:s.flow.latest?.id||'',revisionStatus:s.flow.latest?.status||'',formal:s.flow.formal?.action||'',formalTime:s.flow.formal?.time||s.flow.formal?.created_at||'',requesterReject:rr?.time||rr?.created_at||'',requesterFeedback:rr?.reply||''})}
-function existingRequesterFeedback(){return String(latestRequesterReject(state?.history)?.reply||'').trim()}
-function syncHeader(kind){const badge=document.getElementById('header-status-badge');if(!badge)return;if(kind==='content_revision_requested'||kind==='content_revision_draft'){badge.innerHTML='母版已通过 · 待内容修改';badge.className='bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5';badge.classList.remove('hidden')}else if(kind==='content_revision_generating'){badge.innerHTML='母版已锁定 · 内容修改中';badge.className='bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5';badge.classList.remove('hidden')}else if(kind==='content_revision_review'){badge.innerHTML='修改版待需求方验收';badge.className='bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5';badge.classList.remove('hidden')}}
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+const user = () => { try { return JSON.parse(localStorage.getItem('activeUserObj') || '{}'); } catch { return {}; } };
+const parseHistory = (raw) => { if (Array.isArray(raw)) return raw; try { const value = JSON.parse(String(raw || '[]')); return Array.isArray(value) ? value : []; } catch { return []; } };
+const panel = () => document.getElementById('smart-action-panel');
+const api = () => window.aiRequirementClient;
+const toast = (title, message, kind = 'success') => window.showToast ? window.showToast(title, message, kind) : console.log(title, message);
 
-function editor(initialFeedback=''){return`<div class="mt-5 pt-5 border-t border-white/10 space-y-4"><div><p class="text-[12px] font-bold text-white">告诉 AI 设计师要改什么</p><p class="text-[11px] text-zinc-500 mt-1 leading-relaxed">请直接描述本轮修改要求。AI 设计师只会在领导已通过的设计母版内修改内容与对应页面，不会重新设计框架，也不会再送领导审核。</p></div><textarea id="template-revision-feedback" class="w-full h-32 bg-[#09090b] border border-zinc-700 rounded-xl px-3 py-3 text-[12px] text-white resize-none focus:border-indigo-500 outline-none" placeholder="例如：P2 出现文字乱码，需要纠正；P3 奖励金额改成 8000 元豆。">${esc(initialFeedback)}</textarea><label class="flex gap-2 items-center text-[11px] text-zinc-400"><input id="template-refresh-tencent" type="checkbox" class="accent-indigo-500"> 我已更新腾讯文档，请同时读取最新内容</label><button data-template-action="submit-revision" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[13px] font-bold transition-colors">提交修改给 AI 设计师</button><p class="text-[10px] text-zinc-500 leading-relaxed text-center">本次提交只生成需要修改的页面；未受影响页面继续复用领导已通过的母版。</p></div>`}
-function requestedHtml(){const feedback=existingRequesterFeedback();return`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div><h3 class="text-[16px] font-bold text-indigo-300">领导已通过设计母版 · 等待内容修改</h3><p class="text-[12px] text-zinc-400 leading-relaxed mt-2">当前 Demo 已经由领导审核并冻结为设计母版。需求方这次打回仅代表需要更新/纠正内容，<span class="text-zinc-200 font-bold">无权推倒框架，也不会再次进入领导审核</span>。</p>${feedback?`<div class="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3"><p class="text-[10px] text-zinc-500">你刚才提交的修改意见</p><p class="text-[12px] text-indigo-200 mt-1 leading-relaxed">${esc(feedback)}</p></div>`:''}${editor(feedback)}`}
-function reviewHtml(revision=false){return`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-emerald-500"></div><h3 class="text-[16px] font-bold text-emerald-400">${revision?`内容改版 r${state.flow.latest?.revision_no||''} 待您验收`:'领导已通过设计母版 · 待您验收'}</h3><p class="text-[12px] text-zinc-400 leading-relaxed mt-2 mb-5">${revision?'当前版本保持领导已通过的母版方向，只执行本轮修改要求；验收后直接完结，不再经过领导。':'内容无误可直接验收当前 Demo；如有修改意见，只能在已通过母版内提交内容调整。'}</p><div class="space-y-3"><button data-template-action="accept" class="w-full py-3.5 bg-emerald-600 text-white rounded-xl text-[13px] font-bold">确认验收并完结</button><button data-template-action="toggle-editor" class="w-full py-3 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-xl text-[12px] font-bold">内容需要调整</button></div>${editorOpen?editor():''}`}
-function rejectedHtml(){const feedback=[...state.history].reverse().find(x=>x?.action==='reject_framework')?.reply||'领导认为当前方向不合适，请沟通后提交明确调整要求。';return`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-rose-500"></div><h3 class="text-[16px] font-bold text-rose-300">框架方案被领导驳回</h3><p class="text-[12px] text-zinc-400 leading-relaxed mt-2">此状态只会发生在领导尚未通过母版之前。请先与领导沟通清楚，再提交新的框架方向。</p><div class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3"><p class="text-[10px] text-zinc-500">领导原始意见</p><p class="text-[12px] text-rose-300 mt-1">${esc(feedback)}</p></div><textarea id="template-framework-direction" class="w-full h-28 mt-4 bg-[#09090b] border border-zinc-700 rounded-xl px-3 py-3 text-[12px] text-white resize-none" placeholder="本轮框架调整要求（必填）：填写你与领导沟通后确认的明确方向"></textarea><label class="flex gap-2 items-center mt-3 text-[11px] text-zinc-400"><input id="template-refresh-tencent" type="checkbox" class="accent-indigo-500"> 同时重新读取最新腾讯文档</label><textarea id="template-framework-supplement" class="w-full h-20 mt-3 bg-[#09090b] border border-zinc-700 rounded-xl px-3 py-3 text-[12px] text-white resize-none" placeholder="补充业务信息（可选）"></textarea><button data-template-action="generate-framework" class="w-full mt-4 py-3.5 bg-indigo-600 text-white rounded-xl text-[13px] font-bold">提交调整要求，重新生成框架</button>`}
-function generatingHtml(){const pages=(state.flow.latest?.affected_pages||[]).map(Number).filter(Boolean);return`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div><h3 class="text-[16px] font-bold text-indigo-300">AI 设计师正在处理内容修改</h3><p class="text-[12px] text-zinc-400 mt-2 leading-relaxed">已收到需求方修改意见，正在基于领导已通过的设计母版处理${pages.length?` P${pages.join('、P')}`:'需要调整的页面'}。未受影响页面继续复用原版本，框架不会重做。</p><div class="mt-4 flex items-center gap-2 text-[11px] text-indigo-300"><span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span> 修改版完成后直接回到需求方验收，不再送领导审核</div>`}
-function render(){const p=panel();if(!p||!state||!isRequesterUser(user()))return;const kind=state.flow.kind;if(!['framework_rejected_waiting_requester','content_revision_requested','template_review','content_revision_review','content_revision_generating','capacity_conflict','content_revision_draft'].includes(kind))return;syncHeader(kind);p.className='bg-[#121217] border border-white/10 rounded-3xl p-7 shadow-2xl relative overflow-hidden';p.dataset.templateWorkflow='v3';if(kind==='framework_rejected_waiting_requester')p.innerHTML=rejectedHtml();else if(kind==='content_revision_requested'){editorOpen=true;p.innerHTML=requestedHtml()}else if(kind==='content_revision_generating')p.innerHTML=generatingHtml();else if(kind==='capacity_conflict'){editorOpen=true;p.innerHTML=`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-amber-500"></div><h3 class="text-[16px] font-bold text-amber-300">AI 设计师发现内容容量冲突</h3><p class="text-[12px] text-zinc-400 mt-2">新内容超出领导已通过母版的合理承载范围。系统不会擅自换框架，请调整内容后重新提交。</p>${editor(existingRequesterFeedback())}`}else if(kind==='content_revision_draft'){editorOpen=true;p.innerHTML=`<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div><h3 class="text-[16px] font-bold text-indigo-300">母版已通过 · 请重新提交内容修改</h3><p class="text-[12px] text-zinc-400 mt-2">旧版流程留下了一次仅分析未生成的记录。不会重新审核框架，请直接提交本轮完整修改要求。</p>${editor(existingRequesterFeedback())}`}else p.innerHTML=reviewHtml(kind==='content_revision_review')}
-async function sync(force=false){if(busy||!sb||!taskId)return;busy=true;try{installLeaderOverrides();const next=await load();if(next.task?.assignee!=='davis.design.ai')return;const key=dbKey(next);state=next;if(force||key!==lastDbKey){lastDbKey=key;render()}}catch(e){console.error('母版流程同步失败',e)}finally{busy=false}}
+function latestRequesterFeedback(history = []) {
+  const accepted = new Set(['requester_revision_feedback', 'reject_draft']);
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index] || {};
+    if (!accepted.has(String(item.action || ''))) continue;
+    const feedback = String(item.reply || item.requester_feedback || '').trim();
+    if (feedback) return { feedback, item };
+  }
+  return { feedback:'', item:null };
+}
 
-async function act(name,target){if(!state)return;if(name==='toggle-editor'){editorOpen=!editorOpen;render();return}if(name==='generate-framework'){if(state.template)return toast('母版已锁定','领导已通过的母版不能被需求方推倒重来；请走内容修改。','error');const direction=String(document.getElementById('template-framework-direction')?.value||'').trim();if(!direction)return toast('请补充调整要求','请填写与领导沟通后确认的明确方向。','error');await api().generateFrameworkRevision(sb,taskId,{requester_direction:direction,refresh_tencent_doc:Boolean(document.getElementById('template-refresh-tencent')?.checked),supplemental_content:String(document.getElementById('template-framework-supplement')?.value||'').trim()});toast('已提交','新一轮框架已进入队列。');return sync(true)}if(name==='accept'){if(!confirm('确认以当前版本作为最终交付并完结？此操作不会再次生图。'))return;await api().acceptCurrentRevision(sb,taskId);toast('验收完成','已直接验收，未触发新图片生成。');return location.reload()}if(name==='submit-revision'){let payload;try{payload=buildRequesterRevisionRequest(String(document.getElementById('template-revision-feedback')?.value||''),Boolean(document.getElementById('template-refresh-tencent')?.checked))}catch{return toast('请填写修改要求','需要先告诉 AI 设计师具体要调整什么。','error')}const oldText=target.textContent;target.textContent='AI 设计师正在读取并处理...';const result=await api().submitContentRevisionRequest(sb,taskId,payload);if(result.status==='processing'){editorOpen=false;toast('已交给 AI 设计师','AI 正在已通过母版内修改需要调整的页面；完成后直接回你验收。','success')}else if(result.status==='capacity_conflict'){editorOpen=true;toast('内容容量冲突','AI 判断新内容超出母版承载范围，请调整后重新提交。','error')}else if(result.status==='needs_input'){toast('AI 需要补充信息','AI 已收到意见，但仍有关键内容需要你补充。','info')}else if(result.status==='no_change'){toast('无需重新生成','AI 检查后判断当前版本不需要改动，可以直接验收。','success')}else toast('AI 已收到修改意见','正在继续处理。','info');if(target.isConnected)target.textContent=oldText;return sync(true)}}
-function installClickHandler(){document.addEventListener('click',async e=>{const b=e.target?.closest?.('[data-template-action]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();if(b.disabled)return;b.disabled=true;try{await act(String(b.dataset.templateAction||''),b)}catch(error){toast('操作失败',error?.message||String(error),'error')}finally{if(b.isConnected)b.disabled=false}},true)}
-function installLeaderOverrides(){if(!oldApprove&&typeof window.submitApprove==='function')oldApprove=window.submitApprove;if(!oldReject&&typeof window.submitReject==='function')oldReject=window.submitReject;if(oldApprove)window.submitApprove=async()=>{const s=await load();if(s.task?.assignee!=='davis.design.ai'||!isLeaderUser(user())||s.task.status!=='pending_approval')return oldApprove();try{await api().approveFramework(sb,taskId,String(document.getElementById('approve-notes')?.value||'').trim());window.closeActionModals?.();toast('审批通过','当前框架已冻结为该需求设计母版，之后仅由需求方验收或提内容修改。');setTimeout(()=>location.reload(),400)}catch(e){toast('审批失败',e.message||String(e),'error')}};if(oldReject)window.submitReject=async()=>{const s=await load();if(s.task?.assignee!=='davis.design.ai'||!isLeaderUser(user())||s.task.status!=='pending_approval')return oldReject();try{await api().rejectFramework(sb,taskId,String(document.getElementById('reject-reason')?.value||'').trim());window.closeActionModals?.();toast('已驳回','任务已回需求方；只有母版锁定前才能重新调整框架。','info');setTimeout(()=>location.reload(),400)}catch(e){toast('驳回失败',e.message||String(e),'error')}}}
-export function bootstrapRequesterFrameworkRevisionFlowV3(client){if((location.pathname.split('/').pop()||'')!=='task-detail-requester.html'||window.__requesterFrameworkRevisionV3)return;window.__requesterFrameworkRevisionV3=true;sb=client;taskId=String(new URLSearchParams(location.search).get('id')||'').trim();const start=()=>{installClickHandler();sync(true);timer=setInterval(()=>sync(false),3500);let n=0;const hook=setInterval(()=>{installLeaderOverrides();if(++n>=60)clearInterval(hook)},100)};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();window.addEventListener('beforeunload',()=>clearInterval(timer),{once:true})}
+async function load() {
+  const [taskResult, templateResult, revisionsResult] = await Promise.all([
+    sb.from('test_tasks').select('*').eq('id', taskId).single(),
+    sb.from('uat_framework_templates').select('*').eq('task_id', taskId).maybeSingle(),
+    sb.from('uat_content_revisions').select('*').eq('task_id', taskId).order('revision_no', { ascending:false }),
+  ]);
+  if (taskResult.error) throw taskResult.error;
+  if (templateResult.error) throw templateResult.error;
+  if (revisionsResult.error) throw revisionsResult.error;
+  const task = taskResult.data;
+  const template = templateResult.data || null;
+  const revisions = revisionsResult.data || [];
+  const history = parseHistory(task.history_json);
+  return { task, template, revisions, history, flow:selectRequesterFlowState({ task, template, revisions, history }) };
+}
+
+function dbKey(next) {
+  const latestFeedback = latestRequesterFeedback(next.history);
+  return JSON.stringify({
+    status:next.task.status,
+    summary:next.task.summary_desc,
+    template:next.template?.id || '',
+    revision:next.flow.latest?.id || '',
+    revisionStatus:next.flow.latest?.status || '',
+    feedback:latestFeedback.feedback,
+    editorOpen,
+  });
+}
+
+function syncHeader(kind) {
+  const badge = document.getElementById('header-status-badge');
+  if (!badge) return;
+  if (kind === 'content_revision_requested') badge.textContent = '母版已通过 · 修改意见已提交';
+  else if (kind === 'content_revision_waiting_ai') badge.textContent = 'AI 已理解 · 等待设计师执行';
+  else if (kind === 'content_revision_generating') badge.textContent = 'AI 设计师修改中';
+  else if (kind === 'content_revision_review') badge.textContent = '修改版待需求方验收';
+  else if (kind === 'template_review') badge.textContent = '领导已通过 · 待需求方验收';
+  else return;
+  badge.className = 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5';
+  badge.classList.remove('hidden');
+}
+
+function editor(initialFeedback = '') {
+  return `<div class="mt-5 pt-5 border-t border-white/10 space-y-4">
+    <div><p class="text-[12px] font-bold text-white">补充本轮修改信息</p><p class="text-[11px] text-zinc-500 mt-1 leading-relaxed">需求方只负责补充需求信息。提交后由 AI 设计师理解并决定如何修改；需求方不会触发任何图片生成。</p></div>
+    <textarea id="template-revision-feedback" class="w-full h-32 bg-[#09090b] border border-zinc-700 rounded-xl px-3 py-3 text-[12px] text-white resize-none focus:border-indigo-500 outline-none" placeholder="例如：P2 出现文字乱码，需要纠正；P3 奖励金额改成 8000 元豆。">${esc(initialFeedback)}</textarea>
+    <label class="flex gap-2 items-center text-[11px] text-zinc-400"><input id="template-refresh-tencent" type="checkbox" class="accent-indigo-500"> 我已更新腾讯文档，请 AI 设计师同时读取最新内容</label>
+    <button data-template-action="submit-revision" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[13px] font-bold transition-colors">提交补充信息给 AI 设计师</button>
+    <p class="text-[10px] text-zinc-500 leading-relaxed text-center">此操作只提交信息和触发 AI 理解，不会创建 Seedream generation。</p>
+  </div>`;
+}
+
+function requestedHtml() {
+  const { feedback } = latestRequesterFeedback(state.history);
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>
+    <h3 class="text-[16px] font-bold text-indigo-300">修改意见已提交给 AI 设计师</h3>
+    <p class="text-[12px] text-zinc-400 leading-relaxed mt-2">领导已通过的设计母版继续锁定。需求方只补充内容，不会重新生成框架，也没有生图权限。</p>
+    ${feedback ? `<div class="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3"><p class="text-[10px] text-zinc-500">当前修改意见</p><p class="text-[12px] text-indigo-200 mt-1 leading-relaxed">${esc(feedback)}</p></div>` : ''}
+    <button data-template-action="toggle-editor" class="w-full mt-4 py-3 bg-white/5 border border-white/10 text-zinc-300 rounded-xl text-[12px] font-bold">继续补充信息</button>
+    ${editorOpen ? editor('') : ''}`;
+}
+
+function waitingAiHtml() {
+  const revision = state.flow.latest;
+  const pages = (revision?.affected_pages || []).map(Number).filter(Boolean);
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-blue-500"></div>
+    <h3 class="text-[16px] font-bold text-blue-300">AI 已理解修改意见</h3>
+    <p class="text-[12px] text-zinc-400 leading-relaxed mt-2">AI 已完成内容理解和受影响页面判断，当前尚未生图。下一步只能由 AI 设计师执行修改。</p>
+    <div class="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3"><p class="text-[10px] text-zinc-500">AI 判断需要修改</p><p class="text-[14px] font-bold text-blue-200 mt-1">${pages.length ? `P${pages.join('、P')}` : '等待 AI 设计师确认'}</p></div>
+    <p class="text-[10px] text-zinc-500 mt-3 text-center">需求方无需操作，也无法触发图片生成。</p>`;
+}
+
+function generatingHtml() {
+  const pages = (state.flow.latest?.affected_pages || []).map(Number).filter(Boolean);
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-violet-500"></div>
+    <h3 class="text-[16px] font-bold text-violet-300">AI 设计师正在执行内容修改</h3>
+    <p class="text-[12px] text-zinc-400 mt-2 leading-relaxed">正在基于领导已通过母版处理${pages.length ? ` P${pages.join('、P')}` : '受影响页面'}。未受影响页面继续复用原版本。</p>
+    <div class="mt-4 flex items-center gap-2 text-[11px] text-violet-300"><span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span> 完成后直接回到需求方验收，不再送领导审核</div>`;
+}
+
+function reviewHtml(revision = false) {
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-emerald-500"></div>
+    <h3 class="text-[16px] font-bold text-emerald-400">${revision ? `内容修改版 r${state.flow.latest?.revision_no || ''} 待您验收` : '领导已通过设计母版 · 待您验收'}</h3>
+    <p class="text-[12px] text-zinc-400 leading-relaxed mt-2 mb-5">${revision ? '当前版本只执行了本轮内容修改；验收后直接完结，不再经过领导。' : '内容无误可直接验收；如需调整，只能补充修改信息给 AI 设计师。'}</p>
+    <div class="space-y-3"><button data-template-action="accept" class="w-full py-3.5 bg-emerald-600 text-white rounded-xl text-[13px] font-bold">确认验收并完结</button><button data-template-action="toggle-editor" class="w-full py-3 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-xl text-[12px] font-bold">补充修改信息</button></div>
+    ${editorOpen ? editor('') : ''}`;
+}
+
+function capacityHtml() {
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-amber-500"></div>
+    <h3 class="text-[16px] font-bold text-amber-300">AI 判断内容超出母版容量</h3>
+    <p class="text-[12px] text-zinc-400 mt-2">AI 不会擅自推倒领导已通过的框架。请精简或调整内容后重新补充信息。</p>
+    ${editor('')}`;
+}
+
+function rejectedFrameworkHtml() {
+  const feedback = [...state.history].reverse().find((item) => item?.action === 'reject_framework')?.reply || '领导认为当前方向不合适。';
+  return `<div class="absolute right-0 top-0 bottom-0 w-1.5 bg-rose-500"></div><h3 class="text-[16px] font-bold text-rose-300">框架尚未通过</h3><p class="text-[12px] text-zinc-400 mt-2">领导意见：${esc(feedback)}</p><p class="text-[11px] text-zinc-500 mt-3">需求方只能补充调整信息；重新生图必须由 AI 设计师执行。</p>`;
+}
+
+function render() {
+  const host = panel();
+  if (!host || !state || !isRequesterUser(user())) return;
+  const kind = state.flow.kind;
+  const supported = new Set(['framework_rejected_waiting_requester','content_revision_requested','content_revision_waiting_ai','template_review','content_revision_review','content_revision_generating','capacity_conflict']);
+  if (!supported.has(kind)) return;
+  syncHeader(kind);
+  host.className = 'bg-[#121217] border border-white/10 rounded-3xl p-7 shadow-2xl relative overflow-hidden';
+  host.dataset.templateWorkflow = 'v5';
+  if (kind === 'framework_rejected_waiting_requester') host.innerHTML = rejectedFrameworkHtml();
+  else if (kind === 'content_revision_requested') host.innerHTML = requestedHtml();
+  else if (kind === 'content_revision_waiting_ai') host.innerHTML = waitingAiHtml();
+  else if (kind === 'content_revision_generating') host.innerHTML = generatingHtml();
+  else if (kind === 'capacity_conflict') host.innerHTML = capacityHtml();
+  else host.innerHTML = reviewHtml(kind === 'content_revision_review');
+}
+
+async function sync(force = false) {
+  if (busy || !sb || !taskId) return;
+  busy = true;
+  try {
+    const next = await load();
+    if (next.task?.assignee !== 'davis.design.ai') return;
+    state = next;
+    const key = dbKey(next);
+    if (force || key !== lastDbKey) {
+      lastDbKey = key;
+      render();
+    }
+  } catch (error) {
+    console.error('需求方内容修改流程同步失败', error);
+  } finally {
+    busy = false;
+  }
+}
+
+async function act(name, target) {
+  if (!state) return;
+  if (name === 'toggle-editor') {
+    editorOpen = !editorOpen;
+    lastDbKey = '';
+    render();
+    return;
+  }
+  if (name === 'accept') {
+    if (!confirm('确认以当前版本作为最终交付并完结？此操作不会再次生图。')) return;
+    await api().acceptCurrentRevision(sb, taskId);
+    toast('验收完成', '当前版本已完结。', 'success');
+    return location.reload();
+  }
+  if (name === 'submit-revision') {
+    let payload;
+    try {
+      payload = buildRequesterRevisionRequest(String(document.getElementById('template-revision-feedback')?.value || ''), Boolean(document.getElementById('template-refresh-tencent')?.checked));
+    } catch {
+      return toast('请填写修改信息', '需要先告诉 AI 设计师具体要调整什么。', 'error');
+    }
+    const oldText = target.textContent;
+    target.textContent = '正在提交给 AI 设计师理解…';
+    const result = await api().submitContentRevisionRequest(sb, taskId, payload);
+    if (result.status === 'content_ready') {
+      editorOpen = false;
+      toast('AI 已理解修改信息', '已判断受影响页面，等待 AI 设计师执行修改；没有触发生图。', 'success');
+    } else if (result.status === 'capacity_conflict') {
+      toast('内容容量冲突', 'AI 判断新内容超出母版承载范围，请调整后重新提交。', 'error');
+    } else if (result.status === 'needs_input') {
+      toast('AI 需要补充信息', '请回答 AI 提出的关键问题。', 'info');
+    } else if (result.status === 'no_change') {
+      toast('无需修改', 'AI 判断当前版本无需重新生成。', 'success');
+    } else {
+      toast('信息已提交', 'AI 设计师正在继续理解，本次没有触发生图。', 'info');
+    }
+    if (target.isConnected) target.textContent = oldText;
+    return sync(true);
+  }
+}
+
+function installClickHandler() {
+  document.addEventListener('click', async (event) => {
+    const button = event.target?.closest?.('[data-template-action]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      await act(String(button.dataset.templateAction || ''), button);
+    } catch (error) {
+      toast('操作失败', error?.message || String(error), 'error');
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  }, true);
+}
+
+export function bootstrapRequesterFrameworkRevisionFlowV3(client) {
+  if ((location.pathname.split('/').pop() || '') !== 'task-detail-requester.html' || window.__requesterFrameworkRevisionV3) return;
+  window.__requesterFrameworkRevisionV3 = true;
+  sb = client;
+  taskId = String(new URLSearchParams(location.search).get('id') || '').trim();
+  const start = () => {
+    installClickHandler();
+    sync(true);
+    timer = setInterval(() => sync(false), 3500);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once:true });
+  else start();
+  window.addEventListener('beforeunload', () => clearInterval(timer), { once:true });
+}
