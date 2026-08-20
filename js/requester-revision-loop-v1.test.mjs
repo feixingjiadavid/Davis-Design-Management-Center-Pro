@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const source = readFileSync(new URL('./requester-revision-loop-v1.js', import.meta.url), 'utf8');
+assert.match(source, /满意，确认验收并结束/);
+assert.match(source, /继续补充修改意见/);
+assert.match(source, /第 \$\{Number\(revision\.revision_no/);
+assert.match(source, /submitContentRevisionRequest/);
+assert.match(source, /data-revision-loop-root/);
+assert.doesNotMatch(source, /generateContentRevision/);
+assert.doesNotMatch(source, /generateFrameworkRevision/);
+assert.doesNotMatch(source, /生成 Demo/);
+console.log('requester revision loop: 8/8 passed');
