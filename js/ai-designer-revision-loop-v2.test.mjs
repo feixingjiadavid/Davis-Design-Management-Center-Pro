@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const source = readFileSync(new URL('./ai-designer-revision-loop-v2.js', import.meta.url), 'utf8');
+assert.match(source, /AI 真实理解结果/);
+assert.match(source, /prepareContentRevision/);
+assert.match(source, /历次修改记录/);
+assert.match(source, /首次流程进度继续保留在顶部/);
+assert.match(source, /需要生图时由 AI 设计师自动调用生成/);
+assert.doesNotMatch(source, /getElementById\('pipeline'\)/);
+assert.doesNotMatch(source, /pipeline\.innerHTML/);
+assert.doesNotMatch(source, /generateContentRevision/);
+console.log('ai designer revision loop v2: 8/8 passed');
