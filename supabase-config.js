@@ -55,7 +55,7 @@ if (typeof window !== 'undefined') {
   }
 
   if (page === 'task-detail-requester.html') {
-    import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12')
+    import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12c')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
     import('./js/requester-delivery-view-v13.js?v=requester-delivery-v13')
@@ -64,7 +64,7 @@ if (typeof window !== 'undefined') {
     import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v1')
       .then(module => module.bootstrapRequesterAiStabilityV1())
       .catch(error => console.error('需求详情稳定性修复加载失败:', error));
-    import('./js/requester-framework-revision-flow-v3.js?v=requester-template-revision-v3')
+    import('./js/requester-framework-revision-flow-v3.js?v=requester-template-revision-v4')
       .then(module => module.bootstrapRequesterFrameworkRevisionFlowV3(supabase))
       .catch(error => console.error('需求方母版/内容改版流程加载失败:', error));
     import('./js/framework-hd-review-v1.js?v=framework-hd-review-v2')
