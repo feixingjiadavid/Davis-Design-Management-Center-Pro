@@ -1,24 +1,54 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
-import { archiveRelaySignature, constantTimeEqual, isAllowedUatEmail, outputFileName, safeTaskId } from './drive-relay-core.ts';
-import { isDrivePreviewAllowed } from './drive-preview-core.mjs';
+const BUILD = '20260820-drive-relay-proxy-v2';
+const UPSTREAM = 'https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-seedream-drive-relay';
 
-const UAT_URL='https://bjzfkwxrvytgphvgwltl.supabase.co';
-const UAT_PUBLISHABLE_KEY='sb_publishable__c7_KcaKy6NlBO0BKsmy2g_oGZmZSYV';
-const TOKEN_URL='https://oauth2.googleapis.com/token';
-const DRIVE_API='https://www.googleapis.com/drive/v3/files';
-const DRIVE_UPLOAD_API='https://www.googleapis.com/upload/drive/v3/files';
-const ROOT='1vg12NJfXRXp8KBkvX8uh2RGTYmN0BPWu';
-const JSON_CORS={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,content-type,x-davis-relay-signature','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json; charset=utf-8'};
-const out=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:JSON_CORS});
-const env=(n:string)=>String(Deno.env.get(n)||'').trim();
-async function readJson(r:Response){const t=await r.text().catch(()=>'');if(!t)return{};try{return JSON.parse(t)}catch{return{raw:t.slice(0,2000)}}}
-async function validateUatJwt(jwt:string){if(!jwt)throw new Error('UAT_JWT_REQUIRED');const r=await fetch(`${UAT_URL}/auth/v1/user`,{headers:{apikey:UAT_PUBLISHABLE_KEY,authorization:`Bearer ${jwt}`},signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error('UAT_JWT_INVALID');const u=await r.json();if(!isAllowedUatEmail(u?.email))throw new Error('UAT_CALLER_FORBIDDEN');return{id:String(u?.id||''),email:String(u?.email||'')}}
-async function authenticateCaller(req:Request,admin:any){const sig=String(req.headers.get('x-davis-relay-signature')||'').trim();if(sig){const {data:shared}=await admin.rpc('get_uat_seedream_drive_relay_secret');if(String(shared||'').trim()){const expected=await archiveRelaySignature(String(shared));if(constantTimeEqual(expected,sig))return{id:'server',email:'uat-seedream-worker@internal'}}const arkKey=env('ARK_API_KEY');if(arkKey){const legacy=await archiveRelaySignature(arkKey);if(constantTimeEqual(legacy,sig))return{id:'server',email:'uat-ark-gateway@internal'}}}const jwt=(req.headers.get('Authorization')||'').replace(/^Bearer\s+/i,'');return validateUatJwt(jwt)}
-async function refreshToken(admin:any){const {data,error}=await admin.rpc('get_seedance_google_refresh_token');if(!error&&String(data||'').trim())return String(data).trim();const fallback=env('GOOGLE_REFRESH_TOKEN');if(fallback)return fallback;throw new Error(`GOOGLE_REFRESH_TOKEN_MISSING${error?`:${error.message}`:''}`)}
-async function accessToken(admin:any){const cid=env('GOOGLE_CLIENT_ID'),cs=env('GOOGLE_CLIENT_SECRET'),rt=await refreshToken(admin);if(!cid||!cs||!rt)throw new Error('GOOGLE_OAUTH_SECRETS_MISSING');const r=await fetch(TOKEN_URL,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:cid,client_secret:cs,refresh_token:rt,grant_type:'refresh_token'}),signal:AbortSignal.timeout(20000)});const p=await readJson(r);if(!r.ok||!p?.access_token)throw new Error(`GOOGLE_ACCESS_TOKEN_FAILED:${r.status}`);return String(p.access_token)}
-function qesc(v:string){return v.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
-async function ensureFolder(at:string,taskId:string){const name=safeTaskId(taskId),q=`'${ROOT}' in parents and mimeType='application/vnd.google-apps.folder' and name='${qesc(name)}' and trashed=false`;let r=await fetch(`${DRIVE_API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,webViewLink,parents)&pageSize=10`,{headers:{Authorization:`Bearer ${at}`},signal:AbortSignal.timeout(20000)});let p=await readJson(r);if(!r.ok)throw new Error(`GOOGLE_DRIVE_FOLDER_SEARCH_FAILED:${r.status}`);if(p?.files?.[0]?.id)return p.files[0];r=await fetch(`${DRIVE_API}?fields=id,name,webViewLink,parents`,{method:'POST',headers:{Authorization:`Bearer ${at}`,'content-type':'application/json'},body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',parents:[ROOT],appProperties:{davis_design_task_id:name}}),signal:AbortSignal.timeout(20000)});p=await readJson(r);if(!r.ok||!p?.id)throw new Error(`GOOGLE_DRIVE_FOLDER_CREATE_FAILED:${r.status}`);return p}
-async function findExisting(at:string,folderId:string,fileName:string){const q=`'${folderId}' in parents and name='${qesc(fileName)}' and trashed=false`;const r=await fetch(`${DRIVE_API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,mimeType,webViewLink,thumbnailLink,parents)&pageSize=10`,{headers:{Authorization:`Bearer ${at}`},signal:AbortSignal.timeout(20000)});const p=await readJson(r);if(!r.ok)throw new Error(`GOOGLE_DRIVE_FILE_SEARCH_FAILED:${r.status}`);return p?.files?.[0]||null}
-async function upload(at:string,sourceUrl:string,folderId:string,fileName:string,taskId:string,pageIndex:number){const ex=await findExisting(at,folderId,fileName);if(ex?.id)return{...ex,idempotent_replay:true};const src=await fetch(sourceUrl,{redirect:'follow',signal:AbortSignal.timeout(60000)});if(!src.ok||!src.body)throw new Error(`SEEDREAM_IMAGE_DOWNLOAD_FAILED:${src.status}`);const ct=src.headers.get('content-type')||'image/jpeg';const init=await fetch(`${DRIVE_UPLOAD_API}?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,webViewLink,thumbnailLink,parents`,{method:'POST',headers:{Authorization:`Bearer ${at}`,'content-type':'application/json; charset=UTF-8','X-Upload-Content-Type':ct},body:JSON.stringify({name:fileName,mimeType:ct,parents:[folderId],appProperties:{davis_design_task_id:safeTaskId(taskId),page_index:String(pageIndex),provider:'seedream-4.0'}}),signal:AbortSignal.timeout(20000)});if(!init.ok)throw new Error(`GOOGLE_DRIVE_UPLOAD_INIT_FAILED:${init.status}`);const loc=init.headers.get('location');if(!loc)throw new Error('GOOGLE_DRIVE_RESUMABLE_LOCATION_MISSING');const headers:Record<string,string>={'Content-Type':ct};const len=src.headers.get('content-length');if(len)headers['Content-Length']=len;const up=await fetch(loc,{method:'PUT',headers,body:src.body,signal:AbortSignal.timeout(120000)});const file=await readJson(up);if(!up.ok||!file?.id)throw new Error(`GOOGLE_DRIVE_UPLOAD_FAILED:${up.status}`);return file}
-async function preview(at:string,fileId:string){const metaR=await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?fields=id,name,mimeType,parents,appProperties`,{headers:{Authorization:`Bearer ${at}`},signal:AbortSignal.timeout(20000)});const file=await readJson(metaR);if(!metaR.ok||!file?.id)throw new Error('DRIVE_PREVIEW_FILE_NOT_FOUND');const parentId=String(file?.parents?.[0]||'');if(!parentId)throw new Error('DRIVE_PREVIEW_PARENT_MISSING');const folderR=await fetch(`${DRIVE_API}/${encodeURIComponent(parentId)}?fields=id,name,mimeType,parents,appProperties`,{headers:{Authorization:`Bearer ${at}`},signal:AbortSignal.timeout(20000)});const folder=await readJson(folderR);if(!folderR.ok||!isDrivePreviewAllowed(file,folder,ROOT))throw new Error('DRIVE_PREVIEW_FORBIDDEN');const media=await fetch(`${DRIVE_API}/${encodeURIComponent(fileId)}?alt=media`,{headers:{Authorization:`Bearer ${at}`},signal:AbortSignal.timeout(60000)});if(!media.ok||!media.body)throw new Error(`DRIVE_PREVIEW_DOWNLOAD_FAILED:${media.status}`);return new Response(media.body,{status:200,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,content-type','Cache-Control':'private, max-age=300','Content-Type':String(file.mimeType||media.headers.get('content-type')||'image/jpeg'),'X-Drive-File-Name':encodeURIComponent(String(file.name||''))}})}
-Deno.serve(async(req:Request)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:JSON_CORS});if(req.method!=='POST')return out({ok:false,error:'METHOD_NOT_ALLOWED'},405);try{const su=env('SUPABASE_URL'),sk=env('SUPABASE_SERVICE_ROLE_KEY');if(!su||!sk)throw new Error('RELAY_SUPABASE_ENV_MISSING');const admin=createClient(su,sk,{auth:{persistSession:false,autoRefreshToken:false}});const caller=await authenticateCaller(req,admin);const body=await req.json().catch(()=>({})),action=String(body?.action||'archive');const at=await accessToken(admin);if(action==='health')return out({ok:true});if(action==='preview'){const id=String(body?.drive_file_id||'').trim();if(!id)throw new Error('DRIVE_FILE_ID_REQUIRED');return await preview(at,id)}const taskId=safeTaskId(body?.task_id),pageIndex=Math.max(1,Number(body?.page_index)||1),sourceUrl=String(body?.source_url||'').trim();if(!/^https?:\/\//i.test(sourceUrl))throw new Error('DRIVE_SOURCE_URL_REQUIRED');const folder=await ensureFolder(at,taskId),fileName=outputFileName(taskId,pageIndex),file=await upload(at,sourceUrl,String(folder.id),fileName,taskId,pageIndex);const driveUrl=String(file.webViewLink||`https://drive.google.com/file/d/${file.id}/view`),thumbnail=`https://drive.google.com/thumbnail?id=${file.id}&sz=w1600`;console.log(JSON.stringify({event:'uat_seedream_drive_archived',caller:caller.email,task_id:taskId,page_index:pageIndex,drive_file_id:file.id,idempotent_replay:Boolean(file.idempotent_replay)}));return out({ok:true,drive_file_id:file.id,drive_url:driveUrl,drive_thumbnail_url:thumbnail,drive_folder_id:folder.id,drive_folder_url:folder.webViewLink||`https://drive.google.com/drive/folders/${folder.id}`,drive_file_name:file.name||fileName,idempotent_replay:Boolean(file.idempotent_replay)});}catch(error){const message=error instanceof Error?error.message:String(error),status=/JWT|FORBIDDEN|SIGNATURE/.test(message)?401:/GOOGLE_|DRIVE_/.test(message)?502:400;return out({ok:false,error:message},status)}});
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization,content-type,x-davis-relay-signature',
+  'Access-Control-Allow-Methods': 'POST,OPTIONS',
+  'Access-Control-Expose-Headers': 'content-type,content-length,x-drive-file-name,x-davis-relay-build',
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify({ build: BUILD, ...(body as Record<string, unknown>) }), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+
+  try {
+    const body = await req.text();
+    const headers: Record<string, string> = {
+      'content-type': req.headers.get('content-type') || 'application/json',
+    };
+    const authorization = req.headers.get('authorization');
+    const signature = req.headers.get('x-davis-relay-signature');
+    if (authorization) headers.authorization = authorization;
+    if (signature) headers['x-davis-relay-signature'] = signature;
+
+    const upstream = await fetch(UPSTREAM, {
+      method: 'POST',
+      headers,
+      body,
+      signal: AbortSignal.timeout(120000),
+    });
+
+    const responseHeaders = new Headers(CORS);
+    for (const name of ['content-type', 'content-length', 'cache-control', 'x-drive-file-name']) {
+      const value = upstream.headers.get(name);
+      if (value) responseHeaders.set(name, value);
+    }
+    responseHeaders.set('x-davis-relay-build', BUILD);
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json({ ok: false, error: `DRIVE_RELAY_UPSTREAM_FAILED:${message}` }, 502);
+  }
+});
