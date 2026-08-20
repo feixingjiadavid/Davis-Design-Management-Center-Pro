@@ -6,6 +6,7 @@ import { ingestTaskSources } from './source-service.ts';
 import { analyzeRequirement, confirmUnderstanding } from './analysis-service.ts';
 import { saveAiProcessingAck, saveRequesterAnswers } from './clarification-chat.ts';
 import { assertTemplateWorkflowActor } from './template-workflow-permissions.mjs';
+import { buildRevisionInstruction } from './revision-clarification-context.mjs';
 
 const LEADER = 'uat.leader@webank.com';
 const AI_DESIGNER = 'davis.design.ai@webank.com';
@@ -19,6 +20,11 @@ export const TEMPLATE_WORKFLOW_ACTIONS = new Set([
 export function isTemplateWorkflowAction(action: string) { return TEMPLATE_WORKFLOW_ACTIONS.has(String(action || '')); }
 function actorLabel(email: string) { if (email === LEADER) return 'UAT 领导'; if (email === AI_DESIGNER) return 'Davis AI设计师'; return 'UAT 需求方'; }
 function parseHistory(task: any) { try { const h = JSON.parse(String(task?.history_json || '[]')); return Array.isArray(h) ? h : []; } catch { return []; } }
+function errorMessage(error: any) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') return String(error.message || error.details || error.hint || JSON.stringify(error));
+  return String(error);
+}
 function latestRevisionFeedback(history: any[]) {
   for (let index = (history || []).length - 1; index >= 0; index -= 1) {
     const item = history[index] || {};
@@ -73,7 +79,7 @@ async function autoQueueIfReady(admin: any, taskId: string, data: any) {
 function scheduleAiGeneration(admin: any, taskId: string, data: any) {
   if (String(data?.status || '') !== 'content_ready' || !data?.revision?.id) return { ...data, generation_started:false };
   const job = autoQueueIfReady(admin, taskId, data).catch(async (error: any) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     await admin.from('test_tasks').update({ status:'reviewing', summary_desc:`AI设计师生成排队失败：${message.slice(0,120)}；未创建或继续追加生成任务` }).eq('id', taskId);
     await admin.from('uat_audit_log').insert({ actor_id:null, actor_email:AI_DESIGNER, action:'ai_designer_content_revision_generation_schedule_failed', task_id:taskId, details:{ revision_id:data.revision.id, revision_no:data.revision.revision_no, error:message, generation_started:false } });
   });
@@ -83,6 +89,32 @@ function scheduleAiGeneration(admin: any, taskId: string, data: any) {
   return { ...data, status:'processing', ai_generation_scheduled:true, generation_started:false };
 }
 
+async function loadResolvedRevisionInstruction(admin: any, taskId: string, context: any) {
+  let clarificationQuery = admin.from('uat_clarifications')
+    .select('question,answer,answered_at')
+    .eq('task_id', taskId)
+    .eq('status', 'answered')
+    .order('answered_at', { ascending:true });
+  let messageQuery = admin.from('uat_clarification_messages')
+    .select('content,created_at')
+    .eq('task_id', taskId)
+    .eq('sender_role', 'requester')
+    .eq('message_type', 'message')
+    .order('created_at', { ascending:true });
+  if (context?.time) {
+    clarificationQuery = clarificationQuery.gt('answered_at', context.time);
+    messageQuery = messageQuery.gt('created_at', context.time);
+  }
+  const [clarificationsResult, messagesResult] = await Promise.all([clarificationQuery, messageQuery]);
+  if (clarificationsResult.error) throw clarificationsResult.error;
+  if (messagesResult.error) throw messagesResult.error;
+  return buildRevisionInstruction({
+    originalFeedback:context.feedback,
+    clarifications:clarificationsResult.data || [],
+    messages:(messagesResult.data || []).map((item:any) => String(item.content || '')).filter(Boolean),
+  });
+}
+
 async function continueRevisionAfterClarification(admin: any, task: any, taskId: string, body: any, auth: any, jwt: string) {
   const history = parseHistory((await admin.from('test_tasks').select('history_json').eq('id', taskId).single()).data || task);
   const context = latestRevisionFeedback(history);
@@ -90,22 +122,23 @@ async function continueRevisionAfterClarification(admin: any, task: any, taskId:
   const clientRequestId = String(body.client_request_id || crypto.randomUUID()).trim();
   await saveRequesterAnswers(admin, taskId, body.answers || [], String(body.message || ''), clientRequestId, auth.user.id);
   await saveAiProcessingAck(admin, taskId, clientRequestId, 'answer_clarifications');
+  const resolvedFeedback = await loadResolvedRevisionInstruction(admin, taskId, context);
   await appendHistory(admin, taskId, [{
     action:'content_revision_clarification_answered', operator:actorLabel(String(auth.user.email || '').toLowerCase()),
     time:new Date().toISOString(), reply:String(body.message || '').trim() || (body.answers || []).map((item:any)=>String(item?.answer || '')).filter(Boolean).join('；'),
-    requester_feedback:context.feedback, generation_started:false,
+    requester_feedback:context.feedback, resolved_requester_feedback:resolvedFeedback, generation_started:false,
   }]);
   await admin.from('test_tasks').update({ status:'reviewing', summary_desc:'需求方已补充本轮修改信息，AI设计师正在继续真实理解' }).eq('id', taskId);
   const prepared = await prepareContentRevision(admin, taskId, auth.user.id, {
     source_mode:context.refresh_tencent_doc ? 'combined' : 'system_text',
-    system_content:context.feedback,
-    requester_feedback:context.feedback,
+    system_content:resolvedFeedback,
+    requester_feedback:resolvedFeedback,
     use_tencent_doc:context.refresh_tencent_doc,
     user_jwt:jwt,
   }, { analyze:analyzeRequirement });
-  await recordUnderstanding(admin, taskId, prepared, context.feedback);
+  await recordUnderstanding(admin, taskId, prepared, resolvedFeedback);
   await updateTaskAfterPrepared(admin, taskId, prepared);
-  await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:auth.user.email, action:'content_revision_clarification_answered', task_id:taskId, details:{ status:prepared?.status, requester_feedback:context.feedback, affected_pages:prepared?.affected_pages || [], generation_started:false } });
+  await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:auth.user.email, action:'content_revision_clarification_answered', task_id:taskId, details:{ status:prepared?.status, requester_feedback:context.feedback, resolved_requester_feedback:resolvedFeedback, affected_pages:prepared?.affected_pages || [], generation_started:false } });
   return prepared;
 }
 
@@ -178,7 +211,7 @@ export async function handleTemplateWorkflowAction(args: any) {
 
     throw new Error(`UNHANDLED_TEMPLATE_WORKFLOW_ACTION:${role}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const status = /FORBIDDEN/.test(message) ? 403 : /NOT_FOUND/.test(message) ? 404 : 400;
     return { handled:true, status, body:{ ok:false, error:message } };
   }
