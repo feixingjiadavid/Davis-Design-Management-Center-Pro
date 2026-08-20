@@ -1,6 +1,6 @@
 export const DEMO_MODEL='doubao-seedream-4-0-250828';
 export const DEMO_VERSION='seedream-demo-creative-director-v2';
-export const DRIVE_RELAY_URL='https://supffjeeouibhqdfqosk.supabase.co/functions/v1/uat-seedream-drive-relay';
+export const DRIVE_RELAY_URL='https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-seedream-drive-relay';
 
 const objectUrlCache = new Map();
 
@@ -27,7 +27,10 @@ export async function fetchDrivePreviewBlob({fetchImpl=fetch, relayUrl=DRIVE_REL
       body:JSON.stringify({action:'preview',drive_file_id:id}),
       signal:controller.signal,
     });
-    if(!response.ok) throw new Error(`DRIVE_PREVIEW_HTTP_${response.status}`);
+    if(!response.ok){
+      const detail=await response.text().catch(()=>'');
+      throw new Error(`DRIVE_PREVIEW_HTTP_${response.status}${detail?`:${detail.slice(0,160)}`:''}`);
+    }
     const type=String(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
     if(!type.startsWith('image/')) throw new Error(`DRIVE_PREVIEW_NOT_IMAGE:${type||'unknown'}`);
     const bytes=await response.arrayBuffer();
