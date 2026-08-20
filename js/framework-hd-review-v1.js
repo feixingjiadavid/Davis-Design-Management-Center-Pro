@@ -1,261 +1,35 @@
-import { getDrivePreviewObjectUrl } from './seedream-drive-preview-client.mjs?v=drive-preview-v7';
+import { getDrivePreviewObjectUrl } from './seedream-drive-preview-client.mjs?v=drive-preview-v8-current-uat';
 import { computeOverviewCardSize, defaultReviewMode } from './leader-demo-hd-review-core.mjs?v=leader-hd-overview-v2';
+import { createLazyPreviewQueue } from './lazy-drive-preview-v1.js?v=all-stages-lazy-v1';
 
-let supabaseClient = null;
-let pageUrls = [];
-let pageIndex = 0;
-let overlay = null;
-let observer = null;
-let refreshTimer = null;
-let lastKey = '';
-let reviewMode = defaultReviewMode();
+let supabaseClient=null,pageIds=[],pageUrls=[],pageIndex=0,overlay=null,observer=null,refreshTimer=null,lastKey='',reviewMode=defaultReviewMode(),lazy=null;
+const pageName=()=>location.pathname.split('/').pop()||'';
+const taskId=()=>String(new URLSearchParams(location.search).get('id')||'').trim();
+const parseHistory=(raw)=>{if(Array.isArray(raw))return raw;try{return JSON.parse(String(raw||'[]'))}catch{return[]}};
+const latestFramework=(history)=>[...history].reverse().find(item=>item?.action==='submit_framework'&&Array.isArray(item?.drive_file_ids)&&item.drive_file_ids.length>=1)||null;
 
-const pageName = () => location.pathname.split('/').pop() || '';
-const taskId = () => String(new URLSearchParams(location.search).get('id') || '').trim();
-const parseHistory = (raw) => {
-  if (Array.isArray(raw)) return raw;
-  try { return JSON.parse(String(raw || '[]')); } catch { return []; }
-};
+async function urlFor(index){if(pageUrls[index])return pageUrls[index];const id=pageIds[index];if(!id)throw new Error('FRAMEWORK_FILE_ID_MISSING');pageUrls[index]=await getDrivePreviewObjectUrl(supabaseClient,id);return pageUrls[index]}
+async function ensureAllUrls(){for(let i=0;i<pageIds.length;i+=1)await urlFor(i);return pageUrls}
 
-function latestFramework(history) {
-  return [...history].reverse().find(item => item?.action === 'submit_framework' && Array.isArray(item?.drive_file_ids) && item.drive_file_ids.length >= 1) || null;
-}
-
-function ensureOverlay() {
-  if (overlay?.isConnected) return overlay;
-  overlay = document.createElement('div');
-  overlay.id = 'framework-hd-review-overlay';
-  overlay.className = 'fixed inset-0 z-[1000000] hidden bg-black/95 backdrop-blur-md';
-  overlay.innerHTML = `
-    <div class="absolute inset-0 flex flex-col">
-      <div class="h-16 shrink-0 flex items-center justify-between px-6 border-b border-white/10 bg-black/50">
-        <div>
-          <div class="text-white font-bold text-base">框架方案 · 高清审核</div>
-          <div id="framework-hd-review-count" class="text-xs text-zinc-400 mt-1">3 页完整总览</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="framework-hd-review-overview" class="px-4 py-2 rounded-lg bg-sky-500/20 border border-sky-400/30 text-sky-200 text-sm">三页总览</button>
-          <button id="framework-hd-review-fit" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">适应屏幕</button>
-          <button id="framework-hd-review-detail" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">1:1 看细节</button>
-          <button id="framework-hd-review-prev" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">← 上一页</button>
-          <button id="framework-hd-review-next" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">下一页 →</button>
-          <button id="framework-hd-review-close" class="ml-2 w-10 h-10 rounded-full bg-white/10 hover:bg-rose-500 text-white text-xl">×</button>
-        </div>
-      </div>
-      <div id="framework-hd-review-stage" class="flex-1 min-h-0 overflow-hidden bg-[#080a0f] flex items-center justify-center p-6">
-        <div class="text-zinc-500 text-sm">正在读取高清原图…</div>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-
-  overlay.querySelector('#framework-hd-review-close')?.addEventListener('click', closeHdReview);
-  overlay.querySelector('#framework-hd-review-overview')?.addEventListener('click', () => showOverview());
-  overlay.querySelector('#framework-hd-review-fit')?.addEventListener('click', () => showFocused(pageIndex, false));
-  overlay.querySelector('#framework-hd-review-detail')?.addEventListener('click', () => showFocused(pageIndex, true));
-  overlay.querySelector('#framework-hd-review-prev')?.addEventListener('click', () => showFocused((pageIndex - 1 + pageUrls.length) % pageUrls.length, reviewMode === 'detail'));
-  overlay.querySelector('#framework-hd-review-next')?.addEventListener('click', () => showFocused((pageIndex + 1) % pageUrls.length, reviewMode === 'detail'));
-  overlay.addEventListener('click', event => { if (event.target === overlay) closeHdReview(); });
-
-  window.addEventListener('keydown', event => {
-    if (!overlay || overlay.classList.contains('hidden')) return;
-    if (event.key === 'Escape') closeHdReview();
-    if (reviewMode !== 'overview' && event.key === 'ArrowLeft') showFocused((pageIndex - 1 + pageUrls.length) % pageUrls.length, reviewMode === 'detail');
-    if (reviewMode !== 'overview' && event.key === 'ArrowRight') showFocused((pageIndex + 1) % pageUrls.length, reviewMode === 'detail');
-  });
-
-  window.addEventListener('resize', () => {
-    if (!overlay || overlay.classList.contains('hidden')) return;
-    if (reviewMode === 'overview') showOverview();
-    else if (reviewMode === 'focus') showFocused(pageIndex, false);
-  });
+function ensureOverlay(){
+  if(overlay?.isConnected)return overlay;
+  overlay=document.createElement('div');overlay.id='framework-hd-review-overlay';overlay.className='fixed inset-0 z-[1000000] hidden bg-black/95 backdrop-blur-md';overlay.innerHTML=`<div class="absolute inset-0 flex flex-col"><div class="h-16 shrink-0 flex items-center justify-between px-6 border-b border-white/10 bg-black/50"><div><div class="text-white font-bold text-base">框架方案 · 高清审核</div><div id="framework-hd-review-count" class="text-xs text-zinc-400 mt-1">${pageIds.length||3} 页完整总览</div></div><div class="flex items-center gap-2"><button id="framework-hd-review-overview" class="px-4 py-2 rounded-lg bg-sky-500/20 border border-sky-400/30 text-sky-200 text-sm">多页总览</button><button id="framework-hd-review-fit" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">适应屏幕</button><button id="framework-hd-review-detail" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">1:1 看细节</button><button id="framework-hd-review-prev" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">← 上一页</button><button id="framework-hd-review-next" class="hidden px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm">下一页 →</button><button id="framework-hd-review-close" class="ml-2 w-10 h-10 rounded-full bg-white/10 hover:bg-rose-500 text-white text-xl">×</button></div></div><div id="framework-hd-review-stage" class="flex-1 min-h-0 overflow-hidden bg-[#080a0f] flex items-center justify-center p-6"><div class="text-zinc-500 text-sm">打开时读取高清原图…</div></div></div>`;document.body.appendChild(overlay);
+  overlay.querySelector('#framework-hd-review-close')?.addEventListener('click',closeHdReview);overlay.querySelector('#framework-hd-review-overview')?.addEventListener('click',()=>showOverview());overlay.querySelector('#framework-hd-review-fit')?.addEventListener('click',()=>showFocused(pageIndex,false));overlay.querySelector('#framework-hd-review-detail')?.addEventListener('click',()=>showFocused(pageIndex,true));overlay.querySelector('#framework-hd-review-prev')?.addEventListener('click',()=>showFocused((pageIndex-1+pageIds.length)%pageIds.length,reviewMode==='detail'));overlay.querySelector('#framework-hd-review-next')?.addEventListener('click',()=>showFocused((pageIndex+1)%pageIds.length,reviewMode==='detail'));
   return overlay;
 }
 
-function setHeaderMode(mode, index = 0) {
-  const root = ensureOverlay();
-  const count = root.querySelector('#framework-hd-review-count');
-  const overviewBtn = root.querySelector('#framework-hd-review-overview');
-  const fitBtn = root.querySelector('#framework-hd-review-fit');
-  const detailBtn = root.querySelector('#framework-hd-review-detail');
-  const prevBtn = root.querySelector('#framework-hd-review-prev');
-  const nextBtn = root.querySelector('#framework-hd-review-next');
+function setHeaderMode(mode,index=0){const root=ensureOverlay(),count=root.querySelector('#framework-hd-review-count'),overviewBtn=root.querySelector('#framework-hd-review-overview'),fitBtn=root.querySelector('#framework-hd-review-fit'),detailBtn=root.querySelector('#framework-hd-review-detail'),prevBtn=root.querySelector('#framework-hd-review-prev'),nextBtn=root.querySelector('#framework-hd-review-next');reviewMode=mode;if(mode==='overview'){if(count)count.textContent=`P1–P${pageIds.length} · Google Drive 原始高清图 · 完整同屏`;overviewBtn?.classList.add('bg-sky-500/20','border','border-sky-400/30','text-sky-200');fitBtn?.classList.add('hidden');detailBtn?.classList.add('hidden');prevBtn?.classList.add('hidden');nextBtn?.classList.add('hidden');return}if(count)count.textContent=`P${index+1} / ${pageIds.length} · ${mode==='detail'?'1:1 细节查看':'完整适屏查看'}`;overviewBtn?.classList.remove('bg-sky-500/20','border','border-sky-400/30','text-sky-200');fitBtn?.classList.toggle('hidden',mode!=='detail');detailBtn?.classList.toggle('hidden',mode==='detail');prevBtn?.classList.remove('hidden');nextBtn?.classList.remove('hidden')}
 
-  reviewMode = mode;
-  if (mode === 'overview') {
-    if (count) count.textContent = `P1–P${pageUrls.length} · Google Drive 原始高清图 · 三页完整同屏`;
-    overviewBtn?.classList.add('bg-sky-500/20', 'border', 'border-sky-400/30', 'text-sky-200');
-    fitBtn?.classList.add('hidden');
-    detailBtn?.classList.add('hidden');
-    prevBtn?.classList.add('hidden');
-    nextBtn?.classList.add('hidden');
-    return;
-  }
+async function showOverview(){if(!pageIds.length)return;const root=ensureOverlay(),stage=root.querySelector('#framework-hd-review-stage');if(!stage)return;stage.innerHTML='<div class="text-zinc-500 text-sm">正在读取当前框架高清图…</div>';await ensureAllUrls();setHeaderMode('overview');stage.className='flex-1 min-h-0 overflow-hidden bg-[#080a0f] flex items-center justify-center p-6';const fit=computeOverviewCardSize({viewportWidth:window.innerWidth,viewportHeight:window.innerHeight,pageCount:pageUrls.length,aspectRatio:1242/1660,gap:18,horizontalPadding:56,chromeHeight:116}),grid=document.createElement('div');grid.className='flex items-center justify-center';grid.style.gap=`${fit.gap}px`;pageUrls.forEach((url,idx)=>{const button=document.createElement('button');button.className='relative rounded-xl overflow-hidden border border-white/15 bg-[#111318] shadow-2xl shrink-0';button.style.width=`${fit.cardWidth}px`;button.style.height=`${fit.cardHeight}px`;const img=document.createElement('img');img.src=url;img.alt=`框架方案 P${idx+1}`;img.decoding='async';img.className='w-full h-full object-contain bg-white';button.appendChild(img);button.addEventListener('click',()=>showFocused(idx,false));grid.appendChild(button)});stage.replaceChildren(grid)}
 
-  if (count) count.textContent = `P${index + 1} / ${pageUrls.length} · ${mode === 'detail' ? '1:1 细节查看' : '完整适屏查看'} · Google Drive 原始高清图`;
-  overviewBtn?.classList.remove('bg-sky-500/20', 'border', 'border-sky-400/30', 'text-sky-200');
-  overviewBtn?.classList.add('bg-white/10', 'text-white');
-  fitBtn?.classList.toggle('hidden', mode !== 'detail');
-  detailBtn?.classList.toggle('hidden', mode === 'detail');
-  prevBtn?.classList.remove('hidden');
-  nextBtn?.classList.remove('hidden');
-}
+async function showFocused(index,detail=false){if(!pageIds.length)return;pageIndex=Math.max(0,Math.min(index,pageIds.length-1));const root=ensureOverlay(),stage=root.querySelector('#framework-hd-review-stage');if(!stage)return;stage.innerHTML='<div class="text-zinc-500 text-sm">正在读取该页高清图…</div>';const url=await urlFor(pageIndex);setHeaderMode(detail?'detail':'focus',pageIndex);const img=document.createElement('img');img.src=url;img.alt=`框架方案 P${pageIndex+1} 高清原图`;img.decoding='async';img.className='block bg-white shadow-2xl rounded-lg';if(detail){stage.className='flex-1 min-h-0 overflow-auto bg-[#080a0f] p-6 flex items-start justify-center';img.style.width='1242px';img.style.maxWidth='none'}else{stage.className='flex-1 min-h-0 overflow-hidden bg-[#080a0f] p-6 flex items-center justify-center';img.style.maxWidth='calc(100vw - 72px)';img.style.maxHeight='calc(100vh - 116px)';img.style.objectFit='contain'}stage.replaceChildren(img)}
 
-function showOverview() {
-  if (!pageUrls.length) return;
-  const root = ensureOverlay();
-  const stage = root.querySelector('#framework-hd-review-stage');
-  if (!stage) return;
-  setHeaderMode('overview');
-  stage.className = 'flex-1 min-h-0 overflow-hidden bg-[#080a0f] flex items-center justify-center p-6';
+async function openHdReview(startIndex=null){if(!pageIds.length)return;const root=ensureOverlay();root.classList.remove('hidden');document.documentElement.style.overflow='hidden';if(startIndex===null||startIndex===undefined)await showOverview();else await showFocused(Number(startIndex)||0,false)}
+function closeHdReview(){if(!overlay)return;overlay.classList.add('hidden');document.documentElement.style.overflow='';reviewMode=defaultReviewMode()}
 
-  const fit = computeOverviewCardSize({
-    viewportWidth: window.innerWidth,
-    viewportHeight: window.innerHeight,
-    pageCount: pageUrls.length,
-    aspectRatio: 1242 / 1660,
-    gap: 18,
-    horizontalPadding: 56,
-    chromeHeight: 116,
-  });
+function installLazy(){if(lazy)return;lazy=createLazyPreviewQueue({rootMargin:'900px 0px',concurrency:1,hydrate:async(slot,{index})=>{const url=await urlFor(index),img=document.createElement('img');img.src=url;img.alt=`P${index+1}`;img.loading='lazy';img.decoding='async';img.className='w-full h-full object-contain bg-white';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('IMAGE_DECODE_FAILED'))});slot.replaceChildren(img)}})}
+function patchHistoryCard(framework){const container=document.getElementById('version-history-container');if(!container||!pageIds.length)return false;const cards=[...container.children],version=String(framework.version||'v-X'),card=cards.find(node=>String(node.textContent||'').includes('框架方案')&&String(node.textContent||'').includes(version))||cards.find(node=>String(node.textContent||'').includes('框架方案'));if(!card)return false;const preview=[...card.children].find(node=>node.classList?.contains('w-[280px]')||node.dataset?.frameworkHdPatched==='1');if(!preview)return false;preview.dataset.frameworkHdPatched='1';preview.className='w-[420px] min-h-[330px] bg-[#09090b] rounded-xl border border-sky-500/20 overflow-hidden relative shadow-inner p-3 flex flex-col shrink-0';preview.removeAttribute('onclick');preview.innerHTML=`<div class="flex items-center justify-between mb-3"><div class="text-xs font-bold text-white">${pageIds.length} 页高清框架方案</div><div class="text-[10px] text-emerald-400">历史结果完整保留 · 按视口加载</div></div><div class="grid grid-cols-3 gap-2 flex-1 min-h-0">${pageIds.map((_,idx)=>`<button data-framework-hd-page="${idx}" class="rounded-lg overflow-hidden border border-white/10 bg-black hover:border-sky-400 transition-colors min-h-[245px]"><div data-framework-lazy="${idx}" class="w-full h-full min-h-[245px] flex items-center justify-center text-[10px] text-zinc-600">滚动到附近后加载 P${idx+1}</div></button>`).join('')}</div><button data-framework-hd-open class="mt-3 w-full py-2.5 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-300 hover:bg-sky-500/25 text-xs font-bold">多页完整同屏审核</button>`;installLazy();preview.querySelectorAll('[data-framework-lazy]').forEach(slot=>lazy.observe(slot,{index:Number(slot.dataset.frameworkLazy||0)}));preview.querySelectorAll('[data-framework-hd-page]').forEach(button=>button.addEventListener('click',()=>openHdReview(Number(button.dataset.frameworkHdPage||0))));preview.querySelector('[data-framework-hd-open]')?.addEventListener('click',()=>openHdReview(null));return true}
 
-  const grid = document.createElement('div');
-  grid.className = 'flex items-center justify-center';
-  grid.style.gap = `${fit.gap}px`;
-  grid.style.maxWidth = '100%';
-  grid.style.maxHeight = '100%';
+async function sync(){if(!supabaseClient||pageName()!=='task-detail-requester.html'||document.hidden)return;const id=taskId();if(!id)return;try{const{data:task,error}=await supabaseClient.from('test_tasks').select('id,status,history_json').eq('id',id).single();if(error||!task)return;const framework=latestFramework(parseHistory(task.history_json));if(!framework)return;const ids=framework.drive_file_ids.map(String).filter(Boolean).slice(0,3),key=`${framework.version||''}:${ids.join(',')}`;if(key!==lastKey){pageIds=ids;pageUrls=new Array(ids.length);lastKey=key}patchHistoryCard(framework)}catch(error){console.error('高清框架审核视图加载失败:',error)}}
 
-  pageUrls.forEach((url, idx) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'relative rounded-xl overflow-hidden border border-white/15 bg-[#111318] shadow-2xl hover:border-sky-400 transition-colors shrink-0';
-    button.style.width = `${fit.cardWidth}px`;
-    button.style.height = `${fit.cardHeight}px`;
-    button.title = `P${idx + 1} · 点击单页完整查看`;
-
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = `框架方案 P${idx + 1}`;
-    img.className = 'w-full h-full object-contain bg-white';
-
-    const tag = document.createElement('div');
-    tag.className = 'absolute left-2 top-2 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-bold pointer-events-none';
-    tag.textContent = `P${idx + 1}`;
-
-    button.append(img, tag);
-    button.addEventListener('click', () => showFocused(idx, false));
-    grid.appendChild(button);
-  });
-  stage.replaceChildren(grid);
-}
-
-function showFocused(index, detail = false) {
-  if (!pageUrls.length) return;
-  pageIndex = Math.max(0, Math.min(index, pageUrls.length - 1));
-  const root = ensureOverlay();
-  const stage = root.querySelector('#framework-hd-review-stage');
-  if (!stage) return;
-  setHeaderMode(detail ? 'detail' : 'focus', pageIndex);
-
-  const img = document.createElement('img');
-  img.src = pageUrls[pageIndex];
-  img.alt = `框架方案 P${pageIndex + 1} 高清原图`;
-  img.className = 'block bg-white shadow-2xl rounded-lg';
-
-  if (detail) {
-    stage.className = 'flex-1 min-h-0 overflow-auto bg-[#080a0f] p-6 flex items-start justify-center';
-    img.style.width = '1242px';
-    img.style.maxWidth = 'none';
-    img.style.height = 'auto';
-    img.style.maxHeight = 'none';
-  } else {
-    stage.className = 'flex-1 min-h-0 overflow-hidden bg-[#080a0f] p-6 flex items-center justify-center';
-    img.style.width = 'auto';
-    img.style.height = 'auto';
-    img.style.maxWidth = 'calc(100vw - 72px)';
-    img.style.maxHeight = 'calc(100vh - 116px)';
-    img.style.objectFit = 'contain';
-  }
-  stage.replaceChildren(img);
-}
-
-function openHdReview(startIndex = null) {
-  if (!pageUrls.length) return;
-  const root = ensureOverlay();
-  root.classList.remove('hidden');
-  document.documentElement.style.overflow = 'hidden';
-  if (startIndex === null || startIndex === undefined) showOverview();
-  else showFocused(Number(startIndex) || 0, false);
-}
-
-function closeHdReview() {
-  if (!overlay) return;
-  overlay.classList.add('hidden');
-  document.documentElement.style.overflow = '';
-  reviewMode = defaultReviewMode();
-}
-
-function patchHistoryCard(framework) {
-  const container = document.getElementById('version-history-container');
-  if (!container || !pageUrls.length) return false;
-  const cards = [...container.children];
-  const version = String(framework.version || 'v-X');
-  const card = cards.find(node => String(node.textContent || '').includes('框架方案') && String(node.textContent || '').includes(version)) || cards.find(node => String(node.textContent || '').includes('框架方案'));
-  if (!card) return false;
-  const preview = [...card.children].find(node => node.classList?.contains('w-[280px]') || node.dataset?.frameworkHdPatched === '1');
-  if (!preview) return false;
-  preview.dataset.frameworkHdPatched = '1';
-  preview.className = 'w-[420px] min-h-[330px] bg-[#09090b] rounded-xl border border-sky-500/20 overflow-hidden relative shadow-inner p-3 flex flex-col shrink-0';
-  preview.removeAttribute('onclick');
-  preview.innerHTML = `
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-xs font-bold text-white">3 页高清框架方案</div>
-      <div class="text-[10px] text-emerald-400">Google Drive 原图</div>
-    </div>
-    <div class="grid grid-cols-3 gap-2 flex-1 min-h-0">
-      ${pageUrls.map((url, idx) => `
-        <button data-framework-hd-page="${idx}" class="rounded-lg overflow-hidden border border-white/10 bg-black hover:border-sky-400 transition-colors min-h-[245px]">
-          <img src="${url}" alt="P${idx + 1}" class="w-full h-full object-contain" />
-        </button>`).join('')}
-    </div>
-    <button data-framework-hd-open class="mt-3 w-full py-2.5 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-300 hover:bg-sky-500/25 text-xs font-bold">三页完整同屏审核</button>`;
-  preview.querySelectorAll('[data-framework-hd-page]').forEach(button => button.addEventListener('click', () => openHdReview(Number(button.dataset.frameworkHdPage || 0))));
-  preview.querySelector('[data-framework-hd-open]')?.addEventListener('click', () => openHdReview(null));
-  return true;
-}
-
-async function sync() {
-  if (!supabaseClient || pageName() !== 'task-detail-requester.html') return;
-  const id = taskId();
-  if (!id) return;
-  try {
-    const { data: task, error } = await supabaseClient.from('test_tasks').select('id,status,history_json').eq('id', id).single();
-    if (error || !task) return;
-    const framework = latestFramework(parseHistory(task.history_json));
-    if (!framework) return;
-    const ids = framework.drive_file_ids.map(String).filter(Boolean).slice(0, 3);
-    const key = `${framework.version || ''}:${ids.join(',')}`;
-    if (key !== lastKey || pageUrls.length !== ids.length) {
-      pageUrls = await Promise.all(ids.map(fileId => getDrivePreviewObjectUrl(supabaseClient, fileId)));
-      lastKey = key;
-    }
-    patchHistoryCard(framework);
-  } catch (error) {
-    console.error('高清框架审核视图加载失败:', error);
-  }
-}
-
-export function bootstrapFrameworkHdReview(client) {
-  if (typeof window === 'undefined' || pageName() !== 'task-detail-requester.html') return;
-  if (window.__frameworkHdReviewV2) return;
-  window.__frameworkHdReviewV2 = true;
-  supabaseClient = client;
-  const start = () => {
-    sync();
-    observer = new MutationObserver(() => { clearTimeout(refreshTimer); refreshTimer = setTimeout(sync, 120); });
-    const container = document.getElementById('version-history-container');
-    if (container) observer.observe(container, { childList: true, subtree: false });
-    window.addEventListener('framework-preview-ready', sync);
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
-  window.addEventListener('beforeunload', () => observer?.disconnect(), { once: true });
-}
+export function bootstrapFrameworkHdReview(client){if(typeof window==='undefined'||pageName()!=='task-detail-requester.html'||window.__frameworkHdReviewV2)return;window.__frameworkHdReviewV2=true;supabaseClient=client;const start=()=>{sync();const container=document.getElementById('version-history-container');if(container){observer=new MutationObserver(()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{if(!document.hidden)sync()},500)});observer.observe(container,{childList:true,subtree:false})}window.addEventListener('framework-preview-ready',sync)};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});window.addEventListener('beforeunload',()=>{observer?.disconnect();lazy?.disconnect();clearTimeout(refreshTimer)},{once:true})}
