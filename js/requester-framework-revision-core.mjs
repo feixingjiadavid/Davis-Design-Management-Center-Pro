@@ -21,8 +21,8 @@ export function selectRequesterFlowState({ task = {}, template = null, revisions
   if (status === 'rejected' && !template) return { kind: 'framework_rejected_waiting_requester', latest, formal };
   if (!template) return { kind: 'pre_template', latest, formal };
   if (latest?.status === 'capacity_conflict') return { kind: 'capacity_conflict', latest, formal };
-  if (latest?.status === 'generating' || (status === 'processing' && latest?.status === 'generation_requested')) return { kind: 'content_revision_generating', latest, formal };
-  if (latest?.status === 'content_ready') return { kind: 'content_revision_draft', latest, formal };
+  if (latest?.status === 'generating' || latest?.status === 'generation_requested') return { kind: 'content_revision_generating', latest, formal };
+  if (latest?.status === 'content_ready') return { kind: 'content_revision_waiting_ai', latest, formal };
   if (latest?.status === 'ready_for_review') return { kind: 'content_revision_review', latest, formal };
   if (status === 'rejected') return { kind: 'content_revision_requested', latest, formal };
   if (status === 'reviewing') return { kind: 'template_review', latest, formal };
