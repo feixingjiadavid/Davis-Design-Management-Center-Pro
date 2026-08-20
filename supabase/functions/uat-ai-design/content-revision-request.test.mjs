@@ -25,20 +25,23 @@ await assert.rejects(() => submitRequesterRevisionRequest({}, task, 'u1', { requ
 
 const normal = deps();
 const result = await submitRequesterRevisionRequest({}, task, 'u1', { requester_feedback:'P2文字乱码', refresh_tencent_doc:false, idempotency_key:'k1' }, normal);
-assert.equal(result.status, 'processing');
-assert.deepEqual(normal.calls.map((item) => item[0]), ['prepare','queue']);
+assert.equal(result.status, 'content_ready');
+assert.equal(result.generation_started, false);
+assert.deepEqual(normal.calls.map((item) => item[0]), ['prepare']);
 assert.equal(normal.calls[0][1].system_content, 'P2文字乱码');
 assert.equal(normal.calls[0][1].source_mode, 'system_text');
 
 const refreshed = deps();
-await submitRequesterRevisionRequest({}, task, 'u1', { requester_feedback:'文案已更新', refresh_tencent_doc:true, idempotency_key:'k2' }, refreshed);
-assert.deepEqual(refreshed.calls.map((item) => item[0]), ['refresh','prepare','queue']);
+const refreshedResult = await submitRequesterRevisionRequest({}, task, 'u1', { requester_feedback:'文案已更新', refresh_tencent_doc:true, idempotency_key:'k2' }, refreshed);
+assert.equal(refreshedResult.generation_started, false);
+assert.deepEqual(refreshed.calls.map((item) => item[0]), ['refresh','prepare']);
 assert.equal(refreshed.calls[0][1], 'T1');
 assert.equal(refreshed.calls[1][1].source_mode, 'combined');
 
 const conflict = deps('capacity_conflict');
 const stopped = await submitRequesterRevisionRequest({}, task, 'u1', { requester_feedback:'新增大量内容', idempotency_key:'k3' }, conflict);
 assert.equal(stopped.status, 'capacity_conflict');
+assert.equal(stopped.generation_started, false);
 assert.equal(conflict.calls.some((item) => item[0] === 'queue'), false);
 
-console.log('content revision request: 4/4 passed');
+console.log('content revision request permissions: 4/4 passed');
