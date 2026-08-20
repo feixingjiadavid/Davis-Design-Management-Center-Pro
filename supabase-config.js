@@ -58,10 +58,13 @@ if (typeof window !== 'undefined') {
   }
 
   if (page === 'task-detail-requester.html') {
+    import('./js/requester-bootstrap-recovery-v1.js?v=requester-bootstrap-recovery-v1')
+      .then(module => module.bootstrapRequesterRecovery())
+      .catch(error => console.error('需求方页面启动恢复模块加载失败:', error));
     import('./js/requester-demo-view-v12.js?v=requester-demo-view-v12c')
       .then(module => module.bootstrapRequesterDemoViewV12(supabase))
       .catch(error => console.error('框架方案只读预览加载失败:', error));
-    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v14-revision-loop')
+    import('./js/requester-delivery-view-v13.js?v=requester-delivery-v15-current-uat-preview')
       .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
       .catch(error => console.error('当前可验收版本加载失败:', error));
     import('./js/requester-ai-stability-v1.js?v=requester-ai-stability-v3-revision-history-only')
