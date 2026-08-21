@@ -100,3 +100,29 @@ test('logo placement always preserves intrinsic aspect ratio within locked boxes
   assert.equal(placement.x, 72);
   assert.equal(placement.y, 64);
 });
+
+test('provider-sized Creative Draft is fitted into the locked Creative Area without changing its ratio', async () => {
+  const result = await composeBrandedSvg({
+    pageNo: 1,
+    pageRule: p1Rule,
+    rawCreative: { id: 'raw-scaled', data_url: dataUrl('image/png', 'creative-image'), width: 1920, height: 1952, content_sha256: hash('creative-image') },
+    brandAssets: assets,
+  });
+  assert.equal(result.manifest.creative.width, 1242);
+  assert.equal(result.manifest.creative.height, 1260);
+  assert.deepEqual(result.manifest.creative.source, { width: 1920, height: 1952 });
+  assert.match(result.svg, /preserveAspectRatio="xMidYMid slice"/);
+});
+
+test('wrong-aspect provider output fails instead of distorting the Creative Area', async () => {
+  await assert.rejects(
+    () => composeBrandedSvg({
+      pageNo: 1,
+      pageRule: p1Rule,
+      rawCreative: { id: 'raw-wrong-ratio', data_url: dataUrl('image/png', 'creative-image'), width: 1728, height: 2304, content_sha256: hash('creative-image') },
+      brandAssets: assets,
+    }),
+    /RAW_CREATIVE_ASPECT_RATIO_MISMATCH/,
+  );
+});
+

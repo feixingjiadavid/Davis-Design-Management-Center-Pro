@@ -84,7 +84,10 @@ export function resolveGenerationPlan({ task = {}, pageNo = 1, approvedTemplates
   if (!brandRule) throw new Error('BRAND_RULE_NOT_FOUND');
 
   const pageRules = brandRule.page_rules && typeof brandRule.page_rules === 'object' ? brandRule.page_rules : {};
-  const pageRule = pageRules[String(Number(pageNo))] || pageRules.default;
+  const numericPage = Number(pageNo);
+  const pageRule = pageRules[String(numericPage)]
+    || (numericPage === 1 ? pageRules.P1 : pageRules['P2-PN'])
+    || pageRules.default;
   if (!pageRule?.canvas || !pageRule?.creative_area) throw new Error('BRAND_PAGE_RULE_INVALID');
 
   const requiredTypes = pageRule.apply_brand === true
@@ -128,3 +131,4 @@ export function resolveGenerationPlan({ task = {}, pageNo = 1, approvedTemplates
 
 export const TEMPLATE_REPLACE_FIELDS = TEMPLATE_EDITABLE_FIELDS;
 export const TEMPLATE_LOCKS = TEMPLATE_LOCKED_FIELDS;
+

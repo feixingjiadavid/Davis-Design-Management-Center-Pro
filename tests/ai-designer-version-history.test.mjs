@@ -71,7 +71,7 @@ test('click preview controller opens and closes an in-system high-resolution mod
   assert.equal(document.body.style.overflow, '');
 });
 
-test('generation stage history groups every page into Creative Draft, Composer Preview, and Final Output', () => {
+test('workspace generation history exposes only branded output display URLs', () => {
   assert.equal(typeof historyModule.buildGenerationStageHistory, 'function');
   const batches = historyModule.buildGenerationStageHistory(
     [
@@ -89,12 +89,13 @@ test('generation stage history groups every page into Creative Draft, Composer P
   );
   assert.equal(batches.length, 1);
   assert.deepEqual(batches[0].pages.map((page) => page.pageNo), [1, 2]);
-  assert.deepEqual(batches[0].pages[0].stages.map((stage) => stage.label), ['Creative Draft', 'Composer Preview', 'Final Output']);
-  assert.equal(batches[0].pages[0].stages[0].url, 'signed-raw');
+  assert.deepEqual(batches[0].pages[0].stages.map((stage) => stage.label), ['Final Output']);
+  assert.equal(batches[0].pages[0].stages[0].url, 'public-final');
+  assert.equal(batches[0].pages[1].stages.length, 0);
   assert.equal(batches[0].pages[0].viSummary.logo, 'PASS');
 });
 
-test('stage renderer stays inside design history and exposes no Drive or technical run fields', () => {
+test('stage renderer never exposes Seedream raw creative or composer preview', () => {
   assert.equal(typeof historyModule.renderGenerationStageHtml, 'function');
   const html = historyModule.renderGenerationStageHtml([{
     key:'batch', versionLabel:'v1 框架方案', created_at:'2026-08-20T08:00:00Z',
@@ -104,9 +105,9 @@ test('stage renderer stays inside design history and exposes no Drive or technic
       { role:'branded_output', label:'Final Output', url:'public-final' },
     ] }],
   }]);
-  assert.match(html, /Creative Draft/);
-  assert.match(html, /Composer Preview/);
   assert.match(html, /Final Output/);
   assert.match(html, /Logo:.*PASS/);
+  assert.doesNotMatch(html, /Creative Draft|Composer Preview|signed-raw|signed-preview/);
   assert.doesNotMatch(html, /Seedream Demo|Google Drive|run id|run_id|prompt|模型/);
 });
+

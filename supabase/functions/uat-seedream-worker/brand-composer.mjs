@@ -67,9 +67,11 @@ export async function composeBrandedSvg({ pageNo, pageRule, rawCreative, brandAs
   if (!rawCreative?.data_url || !rawCreative?.id) throw new Error('RAW_CREATIVE_REQUIRED');
   const canvas = pageRule.canvas;
   const creativeArea = pageRule.creative_area;
-  if (Number(rawCreative.width) !== Number(creativeArea.width) || Number(rawCreative.height) !== Number(creativeArea.height)) {
-    throw new Error('RAW_CREATIVE_DIMENSIONS_MISMATCH');
-  }
+  const sourceWidth = finitePositive(rawCreative.width, 'RAW_CREATIVE_WIDTH_INVALID');
+  const sourceHeight = finitePositive(rawCreative.height, 'RAW_CREATIVE_HEIGHT_INVALID');
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = Number(creativeArea.width) / Number(creativeArea.height);
+  if (Math.abs(sourceRatio - targetRatio) > 0.015) throw new Error('RAW_CREATIVE_ASPECT_RATIO_MISMATCH');
 
   const manifestAssets = [];
   const brandImages = [];
@@ -105,7 +107,7 @@ export async function composeBrandedSvg({ pageNo, pageRule, rawCreative, brandAs
     `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">`,
     `<rect width="${canvas.width}" height="${canvas.height}" fill="${background}"/>`,
     templateImage,
-    `<image data-stage="raw_creative" x="${creativeArea.x}" y="${creativeArea.y}" width="${creativeArea.width}" height="${creativeArea.height}" preserveAspectRatio="none" href="${escapeAttribute(rawCreative.data_url)}"/>`,
+    `<image data-stage="raw_creative" x="${creativeArea.x}" y="${creativeArea.y}" width="${creativeArea.width}" height="${creativeArea.height}" preserveAspectRatio="xMidYMid slice" href="${escapeAttribute(rawCreative.data_url)}"/>`,
     ...brandImages,
     '</svg>',
   ].filter(Boolean).join('');
@@ -117,8 +119,9 @@ export async function composeBrandedSvg({ pageNo, pageRule, rawCreative, brandAs
     creative: {
       assetId: rawCreative.id,
       sha256: rawCreative.content_sha256,
-      width: Number(rawCreative.width),
-      height: Number(rawCreative.height),
+      width: Number(creativeArea.width),
+      height: Number(creativeArea.height),
+      source: { width: sourceWidth, height: sourceHeight },
       target: { ...creativeArea },
     },
     template: templateLayer ? { assetId: templateLayer.id, sha256: templateLayer.content_sha256, locked: true } : null,
@@ -127,3 +130,4 @@ export async function composeBrandedSvg({ pageNo, pageRule, rawCreative, brandAs
   };
   return { svg, contentSha256, manifest };
 }
+

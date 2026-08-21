@@ -109,6 +109,32 @@ test('cultural P2 and P3 forbid all brand logo assets', () => {
   }
 });
 
+test('production P1 and P2-PN rule aliases resolve to the same locked VI policy', () => {
+  const productionShape = {
+    ...cultureRule,
+    page_rules: {
+      P1: cultureRule.page_rules[1],
+      'P2-PN': cultureRule.page_rules.default,
+    },
+  };
+  const p1 = resolveGenerationPlan({
+    task: { activity_type: '内部文化活动' },
+    pageNo: 1,
+    brandRules: [genericRule, productionShape],
+    brandAssets: officialAssets,
+  });
+  const p2 = resolveGenerationPlan({
+    task: { activity_type: '内部文化活动' },
+    pageNo: 2,
+    brandRules: [genericRule, productionShape],
+    brandAssets: officialAssets,
+  });
+  assert.equal(p1.pageRule.apply_brand, true);
+  assert.deepEqual(p1.requiredBrandAssets.map((asset) => asset.asset_type), ['wesmart_logo', 'tig_org_logo']);
+  assert.equal(p2.pageRule.apply_brand, false);
+  assert.deepEqual(p2.forbiddenAssetTypes, ['wesmart_logo', 'tig_org_logo']);
+});
+
 test('missing official logo assets fails closed instead of falling back to generic branding', () => {
   const plan = resolveGenerationPlan({
     task: { activity_type: 'TIG周年活动' },
@@ -143,3 +169,4 @@ test('logo-like files are removed from model inputs while non-logo brand IP rema
   ]);
   assert.deepEqual(assets.map((asset) => asset.data_url), ['ip', 'speaker']);
 });
+

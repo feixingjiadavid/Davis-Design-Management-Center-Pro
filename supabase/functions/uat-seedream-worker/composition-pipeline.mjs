@@ -18,6 +18,15 @@ export function stageStoragePath({ taskId, generationId, pageIndex, stage, sha25
   return `${safeSegment(taskId)}/${safeSegment(generationId)}/${page}/${stage}/${file}`;
 }
 
+export function buildWorkspaceDisplayFields(asset) {
+  const isBrandedOutput = asset?.asset_role === 'branded_output'
+    && String(asset?.asset_url || '').includes('/storage/v1/object/public/designs/');
+  return {
+    branded_output_asset_id: isBrandedOutput ? asset.id : null,
+    workspace_display_url: isBrandedOutput ? asset.asset_url : null,
+  };
+}
+
 function stableErrorCode(error) {
   const message = error instanceof Error ? error.message : String(error || 'COMPOSITION_FAILED');
   return message.split(':')[0].replace(/[^A-Z0-9_]/gi, '_').toUpperCase() || 'COMPOSITION_FAILED';
@@ -85,3 +94,4 @@ export async function buildCompositionArtifacts({ pageNo, brandPlan, rawCreative
     };
   }
 }
+

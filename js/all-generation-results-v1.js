@@ -17,11 +17,9 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
 
 const pageName = () => location.pathname.split('/').pop() || '';
 const STAGE_LABELS = {
-  raw_creative: 'Creative Draft',
-  composer_preview: 'Composer Preview',
   branded_output: 'Final Output',
 };
-const STAGE_ORDER = ['raw_creative', 'composer_preview', 'branded_output'];
+const STAGE_ORDER = ['branded_output'];
 
 function currentTaskId() {
   return String(document.querySelector('#taskList .task.active')?.dataset?.id || '').trim();
@@ -113,7 +111,7 @@ export function renderGenerationStageHtml(batches) {
     <div class="flex items-center justify-between gap-3 mb-4"><div><h4 class="text-sm font-bold text-white">${esc(batch.versionLabel)}</h4><p class="text-[11px] text-zinc-500 mt-1">${batch.created_at ? esc(new Date(batch.created_at).toLocaleString()) : ''}</p></div><span class="text-[10px] text-cyan-300">${batch.pages.length} 页</span></div>
     <div class="space-y-4">${batch.pages.map((page) => `<section class="rounded-xl border border-white/10 bg-black/20 p-3">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><span class="text-xs font-bold text-white">P${page.pageNo}</span><span class="text-[10px] ${page.status === 'passed' ? 'text-emerald-300' : page.status === 'failed' ? 'text-rose-300' : 'text-amber-300'}">${esc(page.status || 'processing')}</span></div>
-      <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">${page.stages.map((stage) => `<button type="button" data-design-history-preview="${esc(stage.url)}" class="group text-left overflow-hidden rounded-xl border border-white/10 bg-slate-950 hover:border-cyan-400/50"><div class="aspect-[4/3] bg-black/30"><img src="${esc(stage.url)}" alt="P${page.pageNo} ${esc(stage.label)}" loading="lazy" decoding="async" class="h-full w-full object-contain"></div><div class="border-t border-white/5 px-3 py-2 text-xs font-bold text-white">${esc(stage.label)}</div></button>`).join('') || '<div class="text-xs text-zinc-500">当前阶段尚无图片。</div>'}</div>
+      <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">${page.stages.filter((stage) => stage.role === 'branded_output').map((stage) => `<button type="button" data-design-history-preview="${esc(stage.url)}" class="group text-left overflow-hidden rounded-xl border border-white/10 bg-slate-950 hover:border-cyan-400/50"><div class="aspect-[4/3] bg-black/30"><img src="${esc(stage.url)}" alt="P${page.pageNo} ${esc(stage.label)}" loading="lazy" decoding="async" class="h-full w-full object-contain"></div><div class="border-t border-white/5 px-3 py-2 text-xs font-bold text-white">${esc(stage.label)}</div></button>`).join('') || '<div class="text-xs text-zinc-500">当前阶段尚无图片。</div>'}</div>
       ${page.viSummary ? `<div class="mt-3 flex flex-wrap gap-2 text-[10px]"><span class="rounded-full border border-white/10 px-2 py-1">Logo: ${esc(page.viSummary.logo)}</span><span class="rounded-full border border-white/10 px-2 py-1">Position: ${esc(page.viSummary.position)}</span><span class="rounded-full border border-white/10 px-2 py-1">Color: ${esc(page.viSummary.color)}</span></div>` : ''}
     </section>`).join('')}</div>
   </article>`).join('');
@@ -164,20 +162,12 @@ export async function loadDesignHistory(client, taskId) {
 export async function loadGenerationStageHistory(client, taskId) {
   const [generationResult, assetResult, runResult] = await Promise.all([
     client.from('uat_design_generations').select('id,analysis_id,framework_adjustment_id,revision_id,generation_mode,page_index,status,created_at').eq('task_id', taskId).order('created_at', { ascending:true }),
-    client.from('ai_generation_assets').select('id,generation_id,page_index,asset_role,asset_url,storage_bucket,storage_path,created_at').eq('task_id', taskId).order('created_at', { ascending:true }),
+    client.from('ai_generation_assets').select('id,generation_id,page_index,asset_role,asset_url,storage_bucket,storage_path,created_at').eq('task_id', taskId).eq('asset_role', 'branded_output').order('created_at', { ascending:true }),
     client.from('brand_composition_runs').select('generation_id,status,vi_check,error_code,created_at,completed_at').eq('task_id', taskId).order('created_at', { ascending:true }),
   ]);
   const error = generationResult.error || assetResult.error || runResult.error;
   if (error) throw error;
-  const assets = assetResult.data || [];
-  const privateAssets = assets.filter((asset) => asset.storage_bucket === 'ai-generation-assets' && asset.storage_path);
-  const signedUrls = new Map();
-  if (privateAssets.length) {
-    const signed = await client.storage.from('ai-generation-assets').createSignedUrls(privateAssets.map((asset) => asset.storage_path), 3600);
-    if (signed.error) throw signed.error;
-    (signed.data || []).forEach((item, index) => { if (item?.signedUrl) signedUrls.set(privateAssets[index].id, item.signedUrl); });
-  }
-  return buildGenerationStageHistory(generationResult.data || [], assets, runResult.data || [], signedUrls);
+  return buildGenerationStageHistory(generationResult.data || [], assetResult.data || [], runResult.data || []);
 }
 
 function ensureHost() {
@@ -228,7 +218,7 @@ function render(versions, batches, taskId) {
   const host = ensureHost();
   if (!host) return;
   const imageCount = versions.reduce((sum, version) => sum + version.assets.length, 0);
-  host.innerHTML = `<div class="flex flex-wrap items-start justify-between gap-4 mb-5"><div><h3 class="text-base font-bold text-white">设计生成历史</h3><p class="text-xs text-zinc-500 mt-1">每轮创意稿、品牌合成预览与正式输出集中在这里，最新批次在顶部。</p></div><span class="text-xs rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-1 text-indigo-300">${batches.length} 个生成批次 · ${versions.length} 个正式版本</span></div><div class="space-y-5">${renderGenerationStageHtml(batches)}</div><div class="my-6 border-t border-white/10"></div><div class="mb-4 flex items-center justify-between"><h4 class="text-sm font-bold text-white">正式发布版本</h4><span class="text-[10px] text-zinc-500">${imageCount} 张图片</span></div><div class="space-y-5">${renderDesignHistoryHtml(versions)}</div>`;
+  host.innerHTML = `<div class="flex flex-wrap items-start justify-between gap-4 mb-5"><div><h3 class="text-base font-bold text-white">设计生成历史</h3><p class="text-xs text-zinc-500 mt-1">这里只展示通过 VI 校验的最终加标图，最新批次在顶部。</p></div><span class="text-xs rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-1 text-indigo-300">${batches.length} 个生成批次 · ${versions.length} 个正式版本</span></div><div class="space-y-5">${renderGenerationStageHtml(batches)}</div><div class="my-6 border-t border-white/10"></div><div class="mb-4 flex items-center justify-between"><h4 class="text-sm font-bold text-white">正式发布版本</h4><span class="text-[10px] text-zinc-500">${imageCount} 张图片</span></div><div class="space-y-5">${renderDesignHistoryHtml(versions)}</div>`;
   host.dataset.taskId = taskId;
   host.querySelectorAll('[data-design-history-preview]').forEach((button) => {
     button.addEventListener('click', () => openDesignHistoryPreview(button.dataset.designHistoryPreview));
@@ -282,3 +272,4 @@ export function bootstrapAllGenerationResultsV1(client) {
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDesignHistoryPreview(); });
   window.addEventListener('beforeunload', () => clearInterval(timer), { once:true });
 }
+

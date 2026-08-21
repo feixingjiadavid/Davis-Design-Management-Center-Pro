@@ -53,7 +53,7 @@ if (typeof window !== 'undefined') {
     import('./js/ai-designer-revision-loop-v2.js?v=revision-loop-v2-20260820')
       .then(module => module.bootstrapAiDesignerRevisionLoopV2(supabase))
       .catch(error => console.error('AI 内容修改循环加载失败:', error));
-    import('./js/all-generation-results-v1.js?v=brand-stage-history-v3')
+    import('./js/all-generation-results-v1.js?v=branded-output-only-v4')
       .then(module => module.bootstrapAllGenerationResultsV1(supabase))
       .catch(error => console.error('设计生成历史加载失败:', error));
   }
@@ -78,3 +78,4 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
+

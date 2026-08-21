@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { buildCompositionArtifacts, stageStoragePath } from './composition-pipeline.mjs';
+import { buildCompositionArtifacts, buildWorkspaceDisplayFields, stageStoragePath } from './composition-pipeline.mjs';
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const dataUrl = (value) => `data:image/png;base64,${Buffer.from(value).toString('base64')}`;
@@ -65,3 +65,23 @@ test('stage paths are checksum-addressed and never overlap', () => {
   assert.match(outputPath, /formal-deliveries/);
   assert.equal(new Set([rawPath, previewPath, outputPath]).size, 3);
 });
+
+test('workspace display fields point only to the branded output asset', () => {
+  assert.deepEqual(buildWorkspaceDisplayFields({
+    id: 'final-id',
+    asset_role: 'branded_output',
+    asset_url: 'https://project.supabase.co/storage/v1/object/public/designs/final.svg',
+  }), {
+    branded_output_asset_id: 'final-id',
+    workspace_display_url: 'https://project.supabase.co/storage/v1/object/public/designs/final.svg',
+  });
+  assert.deepEqual(buildWorkspaceDisplayFields({
+    id: 'raw-id',
+    asset_role: 'raw_creative',
+    asset_url: 'private-raw',
+  }), {
+    branded_output_asset_id: null,
+    workspace_display_url: null,
+  });
+});
+
