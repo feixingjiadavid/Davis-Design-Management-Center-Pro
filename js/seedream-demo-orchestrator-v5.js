@@ -9,7 +9,8 @@ const POLL_MS=1500;
 let sb=null,taskId='',state=null,lastSig='',pollTimer=null,submitting=false,submitLabel='',lastError='',painting=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const activeTaskId=()=>String(document.querySelector('.task.active')?.dataset?.id||'').trim();
-function card(){return [...document.querySelectorAll('#detail h3')].find(h=>h.textContent?.trim()==='生成进度')?.parentElement||null;}
+export function findGenerationControlHost(root=document){return root.querySelector('[data-generation-control]');}
+function card(){return findGenerationControlHost(document);}
 function panel(){const c=card();if(!c)return null;let n=c.querySelector('[data-demo-v5]');if(!n){n=document.createElement('div');n.dataset.demoV5='1';c.querySelectorAll(':scope > *:not(h3)').forEach(x=>x.remove());c.appendChild(n);}return n;}
 function total(){return Math.max(1,Number(state?.analysis?.brief?.pages?.length||state?.rows?.[0]?.page_count||1));}
 function ready(row){return row&&['ready','confirmed'].includes(String(row.status));}
