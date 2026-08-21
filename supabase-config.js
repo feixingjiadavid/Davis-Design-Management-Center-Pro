@@ -46,19 +46,16 @@ if (typeof window !== 'undefined') {
       .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
     import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7c')
       .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
-      .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
-    import('./js/seedream-drive-preview-ui-v7.js?v=all-stages-lazy-v1')
-      .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
-      .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
+      .catch(error => console.error('AI 图片生成控制器加载失败:', error));
     import('./js/ai-formal-pipeline-v1.js?v=ai-formal-pipeline-v2-preserve-history')
       .then(module => module.bootstrapAiFormalPipeline(supabase))
       .catch(error => console.error('AI 正式流程条加载失败:', error));
     import('./js/ai-designer-revision-loop-v2.js?v=revision-loop-v2-20260820')
       .then(module => module.bootstrapAiDesignerRevisionLoopV2(supabase))
       .catch(error => console.error('AI 内容修改循环加载失败:', error));
-    import('./js/all-generation-results-v1.js?v=all-generation-history-v1')
+    import('./js/all-generation-results-v1.js?v=formal-design-history-v2')
       .then(module => module.bootstrapAllGenerationResultsV1(supabase))
-      .catch(error => console.error('AI 全阶段生成结果加载失败:', error));
+      .catch(error => console.error('设计生成历史加载失败:', error));
   }
 
   if (page === 'task-detail-requester.html') {
@@ -81,3 +78,4 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('🧪 UAT 环境：Davis 设计管理中心连接成功！SDK:', sdk.source);
+
