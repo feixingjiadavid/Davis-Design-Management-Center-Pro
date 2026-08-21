@@ -285,24 +285,19 @@ async function installAiWorkspaceCompanion(supabase) {
       const taskId = active?.dataset?.id;
       const detail = document.getElementById('detail');
       if (!taskId || !detail || document.getElementById('ai-visual-context-panel')) return;
-      const [{ data: refs }, { data: generations }, { data: task }, { data: analyses }] = await Promise.all([
+      const [{ data: refs }, { data: task }, { data: analyses }] = await Promise.all([
         supabase.from('uat_visual_references').select('*').eq('task_id', taskId).order('sort_order', { ascending: true }),
-        supabase.from('uat_design_generations').select('*').eq('task_id', taskId).eq('kind', 'demo').order('page_index', { ascending: true }),
         supabase.from('test_tasks').select('status,summary_desc').eq('id', taskId).single(),
         supabase.from('uat_requirement_analyses').select('status,brief,prompt_version,version').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
       ]);
       if (document.getElementById('ai-visual-context-panel')) return;
-      const currentDemos = (generations || []).filter(item => ['generating', 'ready', 'confirmed'].includes(item.status));
       const refList = refs || [];
       const currentAnalysis = analyses?.[0]?.status === 'stale' ? null : analyses?.[0];
-      const stateCopy = task?.status === 'waiting_visual_reference' ? '等待需求方上传视觉参考' : task?.status === 'generating_demo' ? 'AI 正在按页生成 Demo' : task?.summary_desc || task?.status || '';
+      const stateCopy = task?.status === 'waiting_visual_reference' ? '等待需求方上传视觉参考' : task?.status === 'generating_demo' ? 'AI 正在按页生成框架方案' : task?.summary_desc || task?.status || '';
       const panel = document.createElement('div');
       panel.id = 'ai-visual-context-panel';
       panel.className = 'mt-6 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.05] p-5';
-      panel.innerHTML = `<div class="flex justify-between gap-4 mb-4"><div><h3 class="text-sm font-bold text-white">视觉参考与多页生成</h3><p class="text-xs text-indigo-300 mt-1">${escapeHtml(stateCopy)}</p></div><span class="text-xs text-slate-400">参考 ${refList.length} 张 · Demo ${currentDemos.length} 张</span></div>
-        <div class="grid grid-cols-4 gap-2 mb-4">${refList.slice(0, 6).map(ref => `<div class="relative aspect-square rounded-lg overflow-hidden border ${ref.is_primary ? 'border-indigo-400' : 'border-white/10'}"><img src="${ref.data_url}" class="w-full h-full object-cover">${ref.is_primary ? '<span class="absolute left-1 top-1 text-[9px] bg-indigo-500 px-1.5 py-0.5 rounded">主</span>' : ''}</div>`).join('') || '<div class="col-span-4 text-xs text-amber-300 py-3">尚无视觉参考，AI 不会生成 Demo。</div>'}</div>
-        ${visualAnalysisSummary(currentAnalysis?.brief?.visual_reference_analysis)}
-        ${currentDemos.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-3 mt-4">${currentDemos.map(demo => `<div class="rounded-lg border border-white/10 bg-black/20 p-3"><div class="flex justify-between text-[10px] mb-2"><span class="text-white font-bold">Demo ${String(demo.page_index || 1).padStart(2, '0')} / ${String(demo.page_count || currentDemos.length).padStart(2, '0')}</span><span class="text-slate-500">${escapeHtml(demo.status)}</span></div>${demo.output?.image_url ? `<img src="${demo.output.image_url}" class="w-full rounded-md bg-white">` : '<div class="aspect-[3/4] flex items-center justify-center text-xs text-slate-600">生成中…</div>'}<p class="text-[10px] text-slate-500 mt-2 truncate">${escapeHtml(demo.model || '')} · ${escapeHtml(demo.output?.size ? `${demo.output.size.width}×${demo.output.size.height}` : '')}</p></div>`).join('')}</div>` : ''}`;
+      panel.innerHTML = renderAiWorkspaceVisualContextHtml({ refs:refList, currentAnalysis, stateCopy });
       detail.appendChild(panel);
     } finally {
       rendering = false;
@@ -313,6 +308,12 @@ async function installAiWorkspaceCompanion(supabase) {
   if (detail) observer.observe(detail, { childList: true, subtree: true });
   window.__davisAiWorkspaceVisualTimer ||= setInterval(render, 1800);
   await render();
+}
+
+export function renderAiWorkspaceVisualContextHtml({ refs = [], currentAnalysis = null, stateCopy = '' } = {}) {
+  return `<div class="flex justify-between gap-4 mb-4"><div><h3 class="text-sm font-bold text-white">视觉参考理解</h3><p class="text-xs text-indigo-300 mt-1">${escapeHtml(stateCopy)}</p></div><span class="text-xs text-slate-400">参考 ${refs.length} 张</span></div>
+    <div class="grid grid-cols-4 gap-2 mb-4">${refs.slice(0, 6).map(ref => `<div class="relative aspect-square rounded-lg overflow-hidden border ${ref.is_primary ? 'border-indigo-400' : 'border-white/10'}"><img src="${ref.data_url}" class="w-full h-full object-cover">${ref.is_primary ? '<span class="absolute left-1 top-1 text-[9px] bg-indigo-500 px-1.5 py-0.5 rounded">主</span>' : ''}</div>`).join('') || '<div class="col-span-4 text-xs text-amber-300 py-3">尚无视觉参考，AI 暂不进入图片生成。</div>'}</div>
+    ${visualAnalysisSummary(currentAnalysis?.brief?.visual_reference_analysis)}`;
 }
 
 export function bootstrapVisualReferenceUI(supabase) {
@@ -327,3 +328,4 @@ export function bootstrapVisualReferenceUI(supabase) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => start(), { once: true });
   else start();
 }
+
