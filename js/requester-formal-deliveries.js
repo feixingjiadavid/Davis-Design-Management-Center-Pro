@@ -25,7 +25,7 @@ export function groupFormalVersions(versions, assets) {
     byVersion.set(asset.design_version_id, list);
   }
   return [...(versions || [])]
-    .sort((a, b) => Number(a.version_no) - Number(b.version_no))
+    .sort((a, b) => Number(b.version_no) - Number(a.version_no))
     .map((version) => ({
       ...version,
       assets: (byVersion.get(version.id) || []).sort((a, b) => Number(a.sort_order) - Number(b.sort_order)),
@@ -37,7 +37,7 @@ export async function loadFormalVersions(supabase, taskId) {
     .from('design_versions')
     .select('id,task_id,version_no,version_name,version_type,status,description,creator,created_at')
     .eq('task_id', taskId)
-    .order('version_no', { ascending: true });
+    .order('version_no', { ascending: false });
   if (versionsResult.error) throw versionsResult.error;
   const versions = versionsResult.data || [];
   if (!versions.length) return [];
@@ -91,3 +91,4 @@ export function bootstrapRequesterFormalDeliveries(supabase) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 }
+
