@@ -34,7 +34,7 @@ if (typeof window !== 'undefined') {
   }
   import('./js/required-design-assets-ui.js?v=requester-formal-v2')
     .then(module => module.bootstrapRequiredDesignAssetsUI(supabase))
-    .then(() => import('./js/visual-reference-ui.js?v=requester-formal-v2'))
+    .then(() => import('./js/visual-reference-ui.js?v=workspace-no-duplicate-demo-v3'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('设计输入模块加载失败:', error));
   if (page === 'ai-designer-workspace.html') {
