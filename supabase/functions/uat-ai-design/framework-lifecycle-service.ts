@@ -1,4 +1,5 @@
 import { assertFrameworkCanBeApproved, assertFrameworkCanBeRejected, latestSubmittedFramework, validateTemplatePages } from './framework-template-core.ts';
+import { selectCompleteFrameworkGenerationGroup } from './formal-framework-submission.mjs';
 
 export type WorkflowActor = { id: string; email?: string; label: string };
 
@@ -27,13 +28,33 @@ async function currentSourceHash(admin: any, task: any) {
   return String(snapshot?.content_sha256 || '');
 }
 
+async function canonicalFrameworkSubmission(admin: any, taskId: string) {
+  const versionResult = await admin.from('design_versions').select('id,version_no,version_name,status').eq('task_id', taskId).eq('version_no', 1).maybeSingle();
+  if (versionResult.error) throw versionResult.error;
+  if (!versionResult.data) return null;
+  const [assetsResult, generationsResult] = await Promise.all([
+    admin.from('design_version_assets').select('sort_order,asset_url').eq('design_version_id', versionResult.data.id).order('sort_order', { ascending:true }),
+    admin.from('uat_design_generations').select('*').eq('task_id', taskId).in('generation_mode', ['initial_framework','framework_revision']).in('status', ['ready','confirmed']).order('updated_at', { ascending:false }),
+  ]);
+  if (assetsResult.error) throw assetsResult.error;
+  if (generationsResult.error) throw generationsResult.error;
+  const generations = selectCompleteFrameworkGenerationGroup(generationsResult.data || [], assetsResult.data || []);
+  if (!generations.length) throw new Error('FORMAL_FRAMEWORK_GENERATIONS_MISMATCH');
+  return {
+    version:'v1',
+    ai_analysis_id:generations[0]?.analysis_id || null,
+    ai_demo_generation_ids:generations.map((row:any) => String(row.id)),
+    generations,
+  };
+}
+
 export async function rejectFramework(admin: any, taskId: string, actor: WorkflowActor, reason = '') {
   const taskResult = await admin.from('test_tasks').select('*').eq('id', taskId).single();
   if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
   const task = taskResult.data;
   const history = parseHistory(task);
-  assertFrameworkCanBeRejected(task, history);
-  const submitted = latestSubmittedFramework(history);
+  const submitted = await canonicalFrameworkSubmission(admin, taskId) || latestSubmittedFramework(history);
+  assertFrameworkCanBeRejected(task, submitted ? [...history, { action:'submit_framework' }] : history);
   const reply = String(reason || '').trim() || '框架方向不合适，请需求方与领导沟通后补充明确调整要求。';
   history.push({
     action: 'reject_framework', version: String(submitted?.version || ''), reply,
@@ -53,11 +74,12 @@ export async function approveFramework(admin: any, taskId: string, actor: Workfl
   if (taskResult.error || !taskResult.data) throw new Error('TASK_NOT_FOUND');
   const task = taskResult.data;
   const history = parseHistory(task);
-  assertFrameworkCanBeApproved(task, history);
+  const canonical = await canonicalFrameworkSubmission(admin, taskId);
+  const submitted: any = canonical || latestSubmittedFramework(history);
+  assertFrameworkCanBeApproved(task, submitted ? [...history, { action:'submit_framework' }] : history);
   const existing = await admin.from('uat_framework_templates').select('id').eq('task_id', taskId).maybeSingle();
   if (existing.data) throw new Error('FRAMEWORK_TEMPLATE_ALREADY_LOCKED');
 
-  const submitted: any = latestSubmittedFramework(history);
   const generationIds = Array.isArray(submitted?.ai_demo_generation_ids)
     ? submitted.ai_demo_generation_ids.map(String).filter(Boolean)
     : [];

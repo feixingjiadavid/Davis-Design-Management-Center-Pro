@@ -189,12 +189,12 @@ function assetCard(asset, interactive = false) {
 }
 
 async function installRequesterDetailPanel(supabase) {
-  if (document.getElementById('required-assets-detail-panel')) return;
+  let panel = document.getElementById('required-assets-detail-panel');
   const aiPanel = document.getElementById('ai-requirement-panel');
-  if (!aiPanel) return;
+  if (!panel && !aiPanel) return;
   const taskId = new URLSearchParams(location.search).get('id');
   if (!taskId) return;
-  aiPanel.insertAdjacentHTML('beforebegin', `
+  if (!panel) aiPanel.insertAdjacentHTML('beforebegin', `
     <section id="required-assets-detail-panel" class="bg-[#121217] border border-orange-500/20 rounded-2xl p-7 relative overflow-hidden">
       <div class="flex justify-between gap-4 items-start mb-5"><div><h3 class="text-sm font-bold text-white">🧩 必用设计素材</h3><p class="text-[11px] text-zinc-500 mt-1">这里放必须真实出现在设计中的IP、Logo、人物、主视觉等。风格参考只学风格，这里的素材才是“要用进去的东西”。</p></div><span id="required-assets-detail-count" class="text-xs text-orange-300"></span></div>
       <div id="required-assets-detail-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3"></div>
@@ -205,6 +205,7 @@ async function installRequesterDetailPanel(supabase) {
       </div>
     </section>
   `);
+  panel = document.getElementById('required-assets-detail-panel');
   let pending = [];
 
   const renderPending = () => {
@@ -253,7 +254,7 @@ async function installRequesterDetailPanel(supabase) {
       renderPending();
       await refresh();
       await startAutomaticAnalysis(supabase, taskId);
-      notify('必用素材已交给 AI', 'AI 会重新理解需求，并在下一版 Demo 中使用这些素材。', 'success');
+      notify('必用素材已交给 AI', 'AI 会重新理解需求，并在下一版设计中使用这些素材。', 'success');
       setTimeout(() => location.reload(), 1200);
     } catch (error) { notify('素材保存失败', error.message, 'error'); }
   };

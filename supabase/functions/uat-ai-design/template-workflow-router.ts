@@ -42,6 +42,13 @@ async function appendHistory(admin: any, taskId: string, items: any[]) {
   await admin.from('test_tasks').update({ history_json: JSON.stringify(history) }).eq('id', taskId);
 }
 
+async function updateLatestFormalVersionStatus(admin: any, taskId: string, status: 'revision' | 'accepted') {
+  const latest = (await admin.from('design_versions').select('id').eq('task_id', taskId).order('version_no', { ascending:false }).limit(1).maybeSingle()).data;
+  if (!latest?.id) return;
+  const { error } = await admin.from('design_versions').update({ status }).eq('id', latest.id);
+  if (error) throw error;
+}
+
 async function supersedePreviousReview(admin: any, taskId: string) {
   const latest = (await admin.from('uat_content_revisions').select('*').eq('task_id', taskId).order('revision_no', { ascending:false }).limit(1).maybeSingle()).data || null;
   if (String(latest?.status || '') === 'ready_for_review') {
@@ -152,11 +159,13 @@ export async function handleTemplateWorkflowAction(args: any) {
     if (action === 'approve_framework' || action === 'reject_framework') {
       const actor = { id:auth.user.id, email, label:actorLabel(email) };
       const data = action === 'approve_framework' ? await approveFramework(admin, taskId, actor, String(body.note || '')) : await rejectFramework(admin, taskId, actor, String(body.reason || ''));
+      await updateLatestFormalVersionStatus(admin, taskId, action === 'approve_framework' ? 'accepted' : 'revision');
       await admin.from('uat_audit_log').insert({ actor_id:auth.user.id, actor_email:email, action, task_id:taskId, details:{ status:data.task?.status, template_id:data.template?.id || null } });
       return { handled:true, status:200, body:{ ok:true, status:data.task?.status, data } };
     }
 
     if (action === 'submit_content_revision_request') {
+      await updateLatestFormalVersionStatus(admin, taskId, 'revision');
       await supersedePreviousReview(admin, taskId);
       const feedback = String(body.requester_feedback || '').trim();
       const data = await submitRequesterRevisionRequest(admin, task, auth.user.id, { ...body, user_jwt:jwt }, { refreshSources:ingestTaskSources, prepare:prepareContentRevision, prepareDeps:{ analyze:analyzeRequirement } });
@@ -176,6 +185,7 @@ export async function handleTemplateWorkflowAction(args: any) {
 
     if (action === 'accept_current_revision') {
       const data = await acceptCurrentRevision(admin, taskId, actorLabel(email));
+      await updateLatestFormalVersionStatus(admin, taskId, 'accepted');
       return { handled:true, status:200, body:{ ok:true, ...data } };
     }
 

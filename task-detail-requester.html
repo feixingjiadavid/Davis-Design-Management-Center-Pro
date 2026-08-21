@@ -56,7 +56,7 @@
         <div class="flex-1 overflow-y-auto custom-scrollbar p-10 flex justify-center scroll-smooth" id="main-scroll-area">
             <div class="w-full max-w-[1400px] flex gap-10 items-start">
                 <div class="flex-1 flex flex-col gap-6 min-w-0 pb-10">
-                    <div class="bg-[#121217] border border-white/5 rounded-2xl p-8 relative overflow-hidden transition-opacity hover:border-indigo-500/20">
+                    <section id="request-detail-section" class="bg-[#121217] border border-white/5 rounded-2xl p-8 relative overflow-hidden transition-opacity hover:border-indigo-500/20">
                         <div class="absolute right-0 top-0 bg-white/5 text-zinc-500 text-[10px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-white/5">1. 原始需求</div>
                         <div class="grid grid-cols-4 gap-4 mb-6 pb-6 border-b border-white/5">
                             <div><p class="text-[11px] text-zinc-500 mb-1">归属项目</p><p class="text-[13px] font-bold text-zinc-300 truncate" id="dt-project">--</p></div>
@@ -72,33 +72,46 @@
                             </div>
                             <div id="attachment-container"></div>
                         </div>
-                    </div>
+                    </section>
 
-                    <div id="ai-requirement-panel" class="hidden bg-[#121217] border border-indigo-500/20 rounded-2xl p-8 relative overflow-hidden">
-                        <div class="absolute right-0 top-0 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-indigo-500/20">AI 需求理解</div>
+                    <section id="required-assets-detail-panel" class="bg-[#121217] border border-orange-500/20 rounded-2xl p-7 relative overflow-hidden">
+                        <div class="flex justify-between gap-4 items-start mb-5"><div><h3 class="text-sm font-bold text-white">🧩 必用设计素材</h3><p class="text-[11px] text-zinc-500 mt-1">展示必须真实用于设计的 IP、Logo、人物、主视觉和产品素材。</p></div><span id="required-assets-detail-count" class="text-xs text-orange-300"></span></div>
+                        <div id="required-assets-detail-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3"></div>
+                        <div class="mt-4 rounded-xl border border-dashed border-orange-500/30 bg-orange-500/[0.04] p-4">
+                            <label class="cursor-pointer block text-center"><span class="text-xs font-bold text-orange-300">＋ 添加必用素材</span><input id="required-assets-detail-input" type="file" multiple accept="image/*" class="hidden"></label>
+                            <div id="required-assets-pending-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3"></div>
+                            <button id="required-assets-detail-save" class="hidden mt-3 w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold">保存素材</button>
+                        </div>
+                    </section>
+
+                    <section id="visual-reference-detail-panel" class="bg-[#121217] border border-indigo-500/20 rounded-2xl p-7 relative overflow-hidden">
+                        <div class="flex justify-between gap-4 items-start mb-5"><div><h3 class="text-sm font-bold text-white">🎨 视觉参考 / 风格参考</h3><p class="text-[11px] text-zinc-500 mt-1">展示本次需求采用的视觉和风格参考。</p></div><span id="visual-reference-detail-count" class="text-xs text-indigo-300"></span></div>
+                        <div id="visual-reference-detail-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3"></div>
+                        <div id="visual-reference-detail-upload" class="mt-4 rounded-xl border border-dashed border-indigo-500/30 bg-indigo-500/[0.04] p-4">
+                            <label class="cursor-pointer block text-center"><span class="text-xs font-bold text-indigo-300">＋ 添加参考图</span><input id="visual-reference-detail-input" type="file" multiple accept="image/*" class="hidden"></label>
+                            <div id="visual-reference-pending-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3"></div>
+                            <button id="visual-reference-detail-save" class="hidden mt-3 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold">保存参考图</button>
+                        </div>
+                    </section>
+
+                    <section id="ai-requirement-panel" class="hidden bg-[#121217] border border-indigo-500/20 rounded-2xl p-8 relative overflow-hidden">
+                        <div class="absolute right-0 top-0 bg-indigo-500/10 text-indigo-300 text-[10px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-indigo-500/20">AI 设计沟通区</div>
                         <div id="ai-requirement-content" class="text-sm text-zinc-400">正在读取 AI 状态...</div>
-                    </div>
+                    </section>
 
-                    <div id="version-history-block" class="hidden mt-4">
+                    <section id="version-history-block" class="hidden mt-4">
                         <h3 class="text-[16px] font-bold text-white mb-4 flex items-center gap-2">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             设计师历史交付版本库
                         </h3>
                         <div id="version-history-container" class="space-y-4"></div>
-                    </div>
+                    </section>
                 </div>
 
                 <div class="w-[380px] shrink-0 flex flex-col gap-6 sticky top-0 pb-10">
-                    <div id="smart-action-panel" class="bg-[#121217] border border-white/5 rounded-3xl p-7 shadow-2xl relative overflow-hidden transition-all duration-300">
-                        <div class="text-center py-6 text-zinc-500 text-sm">面板初始化中...</div>
-                    </div>
-                    <div id="resource-summary-panel" class="hidden bg-[#121217] border border-white/5 rounded-3xl p-7 shadow-xl"></div>
-                    <div class="bg-[#121217] border border-white/5 rounded-3xl p-7 flex flex-col shadow-xl">
-                        <h3 class="text-[14px] font-bold text-white mb-6 border-b border-white/5 pb-4">全量流转生命周期日志</h3>
-                        <div class="relative space-y-6 flex-1" id="task-timeline-container">
-                            <div class="text-center py-4 text-zinc-500 text-xs">轨迹读取中...</div>
-                        </div>
-                    </div>
+                    <section id="acceptance-panel" class="bg-[#121217] border border-white/5 rounded-3xl p-7 shadow-2xl relative overflow-hidden transition-all duration-300">
+                        <div class="text-center py-6 text-zinc-500 text-sm">验收状态读取中...</div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -116,27 +129,15 @@
         </div>
     </div>
 
-    <div id="approve-modal-overlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99999] hidden opacity-0 transition-opacity duration-300 flex items-center justify-center" onclick="if(event.target === this) window.closeActionModals()">
-        <div id="approve-modal" class="hidden w-full max-w-lg bg-[#121217] border border-emerald-500/30 rounded-3xl shadow-[0_20px_50px_-10px_rgba(16,185,129,0.2)] flex flex-col scale-95 transition-transform duration-300 p-6 relative">
-            <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-t-3xl"></div>
-            <div class="flex justify-between items-center mb-4 mt-2">
-                <h2 class="text-[16px] font-bold text-white">同意框架并推进设计</h2>
-                <button onclick="window.closeActionModals()" class="text-zinc-500 hover:text-white bg-zinc-800 rounded-full p-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-            </div>
-            <textarea id="approve-notes" class="w-full bg-[#09090b] border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-emerald-500 h-24 resize-none mb-4 custom-scrollbar" placeholder="写点鼓励的话，或附加细微调整意见 (选填)..."></textarea>
-            <button id="btn-approve-submit" onclick="window.submitApprove()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[13px] font-bold btn-press transition-all">确认通过方向</button>
-        </div>
-    </div>
-
     <div id="reject-modal-overlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99999] hidden opacity-0 transition-opacity duration-300 flex items-center justify-center" onclick="if(event.target === this) window.closeActionModals()">
         <div id="reject-modal" class="hidden w-full max-w-lg bg-[#121217] border border-rose-500/30 rounded-3xl shadow-[0_20px_50px_-10px_rgba(244,63,94,0.2)] flex flex-col scale-95 transition-transform duration-300 p-6 relative">
             <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-orange-500 rounded-t-3xl"></div>
             <div class="flex justify-between items-center mb-4 mt-2">
-                <h2 class="text-[16px] font-bold text-white" id="reject-title">打回要求重修</h2>
+                <h2 class="text-[16px] font-bold text-white" id="reject-title">提交修改意见</h2>
                 <button onclick="window.closeActionModals()" class="text-zinc-500 hover:text-white bg-zinc-800 rounded-full p-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
-            <textarea id="reject-reason" class="w-full bg-[#09090b] border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-rose-500 h-24 resize-none mb-4 custom-scrollbar" placeholder="请详细指出不满意的地方，打回原因将作为关键修改依据永久记录进历史流水账..."></textarea>
-            <button id="btn-reject-submit" onclick="window.submitReject()" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[13px] font-bold btn-press transition-all">确认打回修改</button>
+            <textarea id="reject-reason" class="w-full bg-[#09090b] border border-zinc-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-rose-500 h-24 resize-none mb-4 custom-scrollbar" placeholder="请具体说明需要修改的内容。"></textarea>
+            <button id="btn-reject-submit" onclick="window.submitReject()" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[13px] font-bold btn-press transition-all">提交修改意见</button>
         </div>
     </div>
 
@@ -157,21 +158,17 @@
     </div>
 
     <script src="./js/common.js?v=requester-hardboot-v4"></script>
-    <script src="./js/task-detail-requester.js?v=requester-hardboot-v4"></script>
-    <script src="./js/requester-init-guard-v2.js?v=requester-hardboot-v4"></script>
+    <script src="./js/task-detail-requester.js?v=requester-formal-v2"></script>
+    <script src="./js/requester-init-guard-v2.js?v=requester-formal-v2"></script>
     <script src="https://bjzfkwxrvytgphvgwltl.supabase.co/functions/v1/uat-supabase-sdk-proxy?format=umd&v=20260820-v2"></script>
     <script type="module">
-        import { supabase } from './supabase-config.js?v=requester-bootstrap-v7-all-stages-lazy';
-        import * as aiRequirementClient from './js/ai-requirement-client.js?v=requester-template-revision-v4';
-        import * as aiClarificationChat from './js/ai-clarification-chat.js?v=requester-drive-preview-v10';
-        import { bootstrapRequesterDemoReviewV10 } from './js/requester-demo-review-v10.js?v=all-stages-lazy-v1';
-        import { bootstrapRequesterShellRecoveryV1 } from './js/requester-shell-recovery-v1.js?v=all-stages-lazy-v1';
+        import { supabase } from './supabase-config.js?v=requester-formal-v2';
+        import * as aiRequirementClient from './js/ai-requirement-client.js?v=requester-formal-v2';
+        import * as aiClarificationChat from './js/ai-clarification-chat.js?v=requester-formal-v2';
         window.supabase = supabase;
         window.aiRequirementClient = aiRequirementClient;
         window.aiClarificationChat = aiClarificationChat;
         window.DB_TABLE = 'test_tasks';
-        bootstrapRequesterShellRecoveryV1(supabase);
-        bootstrapRequesterDemoReviewV10(supabase);
         if(window.initApp) window.initApp();
     </script>
 </body>

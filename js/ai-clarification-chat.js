@@ -7,7 +7,7 @@ export function buildOptimisticMessage(content, clientRequestId) {
 }
 
 export function renderMessageBubble(message, escapeHtml) {
-  const mine = message.sender_role === 'requester';
+  const mine = (message.sender_type || message.sender_role) === 'requester';
   return `<div class="flex ${mine ? 'justify-end' : 'justify-start'}"><div class="max-w-[85%] rounded-2xl px-4 py-3 ${mine ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-200'}"><p class="text-sm whitespace-pre-wrap">${escapeHtml(message.content)}</p>${message.pending ? '<p class="text-[10px] opacity-70 mt-1">发送中…</p>' : ''}</div></div>`;
 }
 

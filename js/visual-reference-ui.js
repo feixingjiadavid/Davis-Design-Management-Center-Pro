@@ -186,26 +186,25 @@ function referenceCard(ref, interactive = false) {
   </div>`;
 }
 
-function visualAnalysisSummary(analysis) {
+function visualAnalysisSummary(analysis, requesterSafe = false) {
   if (!analysis || typeof analysis !== 'object') return '';
   const style = analysis.style_summary || '';
   const keywords = Array.isArray(analysis.style_keywords) ? analysis.style_keywords.slice(0, 8).join(' · ') : '';
   const typography = Array.isArray(analysis.typography_style) ? analysis.typography_style.slice(0, 4).join('；') : '';
   const composition = Array.isArray(analysis.composition_patterns) ? analysis.composition_patterns.slice(0, 3).join('；') : '';
-  return `<div class="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.05] p-4"><div class="flex items-center justify-between gap-3"><p class="text-xs font-bold text-cyan-300">千问视觉已理解参考图</p></div><p class="text-sm text-white mt-2">${escapeHtml(style || '已完成视觉分析')}</p>${keywords ? `<p class="text-[11px] text-cyan-200/80 mt-2">${escapeHtml(keywords)}</p>` : ''}${composition ? `<p class="text-[11px] text-zinc-400 mt-2"><span class="text-zinc-500">构图：</span>${escapeHtml(composition)}</p>` : ''}${typography ? `<p class="text-[11px] text-zinc-400 mt-1"><span class="text-zinc-500">字体：</span>${escapeHtml(typography)}</p>` : ''}</div>`;
+  return `<div class="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.05] p-4"><div class="flex items-center justify-between gap-3"><p class="text-xs font-bold text-cyan-300">${requesterSafe ? '视觉参考已确认' : '千问视觉已理解参考图'}</p></div><p class="text-sm text-white mt-2">${escapeHtml(style || '已完成视觉参考确认')}</p>${keywords ? `<p class="text-[11px] text-cyan-200/80 mt-2">${escapeHtml(keywords)}</p>` : ''}${composition ? `<p class="text-[11px] text-zinc-400 mt-2"><span class="text-zinc-500">构图：</span>${escapeHtml(composition)}</p>` : ''}${typography ? `<p class="text-[11px] text-zinc-400 mt-1"><span class="text-zinc-500">字体：</span>${escapeHtml(typography)}</p>` : ''}</div>`;
 }
 
 async function installRequesterDetailPanel(supabase) {
-  if (document.getElementById('visual-reference-detail-panel')) return;
+  let panel = document.getElementById('visual-reference-detail-panel');
   const aiPanel = document.getElementById('ai-requirement-panel');
-  if (!aiPanel) return;
+  if (!panel && !aiPanel) return;
   const taskId = new URLSearchParams(location.search).get('id');
   if (!taskId) return;
-  aiPanel.insertAdjacentHTML('beforebegin', `
+  if (!panel) aiPanel.insertAdjacentHTML('beforebegin', `
     <section id="visual-reference-detail-panel" class="bg-[#121217] border border-indigo-500/20 rounded-2xl p-7 relative overflow-hidden">
-      <div class="flex justify-between gap-4 items-start mb-5"><div><h3 class="text-sm font-bold text-white">🎨 视觉参考 / 风格参考</h3><p class="text-[11px] text-zinc-500 mt-1">AI 平面设计至少需要1张。上传后千问视觉先看图，随后 AI 自动继续流程。</p></div><span id="visual-reference-detail-count" class="text-xs text-indigo-300"></span></div>
+      <div class="flex justify-between gap-4 items-start mb-5"><div><h3 class="text-sm font-bold text-white">🎨 视觉参考 / 风格参考</h3><p class="text-[11px] text-zinc-500 mt-1">AI 平面设计至少需要1张。保存后 AI 设计师会按参考继续处理。</p></div><span id="visual-reference-detail-count" class="text-xs text-indigo-300"></span></div>
       <div id="visual-reference-detail-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3"></div>
-      <div id="visual-reference-analysis-summary"></div>
       <div id="visual-reference-detail-upload" class="mt-4 rounded-xl border border-dashed border-indigo-500/30 bg-indigo-500/[0.04] p-4">
         <label class="cursor-pointer block text-center"><span class="text-xs font-bold text-indigo-300">＋ 添加参考图</span><input id="visual-reference-detail-input" type="file" multiple accept="image/*" class="hidden"></label>
         <div id="visual-reference-pending-grid" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3"></div>
@@ -213,6 +212,7 @@ async function installRequesterDetailPanel(supabase) {
       </div>
     </section>
   `);
+  panel = document.getElementById('visual-reference-detail-panel');
 
   let pending = [];
   const renderPending = () => {
@@ -226,20 +226,16 @@ async function installRequesterDetailPanel(supabase) {
   };
 
   const refresh = async () => {
-    const [{ data: refs, error }, { data: task }, { data: analyses }] = await Promise.all([
+    const [{ data: refs, error }, { data: task }] = await Promise.all([
       supabase.from('uat_visual_references').select('*').eq('task_id', taskId).order('sort_order', { ascending: true }),
       supabase.from('test_tasks').select('status,assignee,request_type').eq('id', taskId).single(),
-      supabase.from('uat_requirement_analyses').select('status,brief,prompt_version,version').eq('task_id', taskId).order('version', { ascending: false }).limit(1),
     ]);
     if (error) return;
     const list = refs || [];
-    const currentAnalysis = analyses?.[0]?.status === 'stale' ? null : analyses?.[0];
     const grid = document.getElementById('visual-reference-detail-grid');
     const count = document.getElementById('visual-reference-detail-count');
     if (count) count.textContent = `${list.length}/${MAX_REFERENCES} 张`;
     if (grid) grid.innerHTML = list.length ? list.map(ref => referenceCard(ref, true)).join('') : '<div class="col-span-full text-center py-6 rounded-xl bg-black/20 border border-dashed border-white/10 text-xs text-amber-300">尚未上传视觉参考，AI 会停在“等待视觉参考”。</div>';
-    const summary = document.getElementById('visual-reference-analysis-summary');
-    if (summary) summary.innerHTML = visualAnalysisSummary(currentAnalysis?.brief?.visual_reference_analysis);
     grid?.querySelectorAll('[data-set-primary-ref]').forEach(button => button.onclick = async () => { await setPrimaryVisualReference(supabase, taskId, button.dataset.setPrimaryRef); await refresh(); });
     grid?.querySelectorAll('[data-delete-ref]').forEach(button => button.onclick = async () => { await deleteVisualReference(supabase, taskId, button.dataset.deleteRef); await refresh(); });
     document.getElementById('visual-reference-detail-upload')?.classList.toggle('hidden', task?.assignee !== 'davis.design.ai' || task?.request_type === '视频动效' || list.length >= MAX_REFERENCES);
@@ -266,7 +262,7 @@ async function installRequesterDetailPanel(supabase) {
       const { data: task } = await supabase.from('test_tasks').select('status').eq('id', taskId).single();
       if (task?.status === 'waiting_visual_reference' || task?.status === 'analysis_failed') {
         await startAutomaticAnalysis(supabase, taskId);
-        notify('AI 已自动继续', '千问视觉会先理解参考图，随后 DeepSeek 重新理解3页需求并自动生成 Demo。', 'success');
+        notify('AI 已继续处理', '视觉参考已保存，AI 设计师会继续理解需求并推进设计。', 'success');
         setTimeout(() => location.reload(), 1200);
       }
     } catch (error) { notify('保存失败', error.message, 'error'); }

@@ -44,7 +44,9 @@ function pagesText(revision) {
 function pendingRoundNo() { return nextRevisionNo(state?.revisions || []); }
 
 function cycleHistoryHtml(revisions, feedback) {
-  const items = [...revisions].sort((a,b)=>Number(a.revision_no||0)-Number(b.revision_no||0));
+  const items = [...revisions]
+    .filter((revision) => ['ready_for_review','accepted','superseded'].includes(String(revision.status)))
+    .sort((a,b)=>Number(a.revision_no||0)-Number(b.revision_no||0));
   const pending = feedback && !feedbackCoveredByRevision(feedback, activeRevision(revisions));
   if (!items.length && !pending) return '';
   const rows = items.map((revision) => {
@@ -63,8 +65,7 @@ function editor() {
 function clarificationHtml() {
   const questions = state?.openClarifications || [];
   if (!questions.length) return '';
-  const analysis = state.analysis || {};
-  return `<div class="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4"><div class="flex items-start justify-between gap-3"><div><p class="text-[13px] font-bold text-amber-300">第 ${pendingRoundNo()} 次修改 · AI 需要你补充信息</p><p class="text-[10px] text-zinc-500 mt-1">这是 DeepSeek analysis v${analysis.version || '-'} 的真实判断，不是固定问题。</p></div><span class="text-[10px] px-2 py-1 rounded-full bg-amber-500/10 text-amber-300">${questions.length} 个问题</span></div><div class="mt-4 space-y-4">${questions.map((item,index)=>`<div><p class="text-[11px] text-zinc-200 leading-relaxed">${index+1}. ${esc(item.question)}</p><textarea data-revision-clarification="${esc(item.id)}" class="mt-2 w-full min-h-[76px] bg-[#09090b] border border-amber-500/20 rounded-xl px-3 py-2.5 text-[12px] text-white resize-none outline-none focus:border-amber-400" placeholder="请补充明确答案"></textarea></div>`).join('')}<textarea id="revision-clarification-message" class="w-full min-h-[60px] bg-[#09090b] border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-white resize-none outline-none" placeholder="其他补充说明（选填）"></textarea><button data-revision-loop-action="answer-clarifications" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-[12px] font-bold">提交补充，继续让 AI 理解</button></div></div>`;
+  return `<div class="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4"><div class="flex items-start justify-between gap-3"><div><p class="text-[13px] font-bold text-amber-300">第 ${pendingRoundNo()} 次修改 · AI 需要你补充信息</p><p class="text-[10px] text-zinc-500 mt-1">请回答与当前修改有关的关键问题，AI 会继续设计。</p></div><span class="text-[10px] px-2 py-1 rounded-full bg-amber-500/10 text-amber-300">${questions.length} 个问题</span></div><div class="mt-4 space-y-4">${questions.map((item,index)=>`<div><p class="text-[11px] text-zinc-200 leading-relaxed">${index+1}. ${esc(item.question)}</p><textarea data-revision-clarification="${esc(item.id)}" class="mt-2 w-full min-h-[76px] bg-[#09090b] border border-amber-500/20 rounded-xl px-3 py-2.5 text-[12px] text-white resize-none outline-none focus:border-amber-400" placeholder="请补充明确答案"></textarea></div>`).join('')}<textarea id="revision-clarification-message" class="w-full min-h-[60px] bg-[#09090b] border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-white resize-none outline-none" placeholder="其他补充说明（选填）"></textarea><button data-revision-loop-action="answer-clarifications" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-[12px] font-bold">提交补充，继续让 AI 理解</button></div></div>`;
 }
 
 function statusBlock() {
@@ -79,7 +80,7 @@ function statusBlock() {
   if (String(latest.status) === 'content_ready') return `<div class="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4"><p class="text-[13px] font-bold text-blue-300">第 ${latest.revision_no} 次修改已理解</p><p class="text-[11px] text-zinc-400 mt-2">AI 判断需要修改 ${esc(pagesText(latest))}，正在由 AI 设计师继续执行生成。</p></div>`;
   if (String(latest.status) === 'ready_for_review') return `<div class="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4"><p class="text-[13px] font-bold text-emerald-300">第 ${latest.revision_no} 次修改已交付 · 待您验收</p><p class="text-[11px] text-zinc-400 mt-2">本轮更新 ${esc(pagesText(latest))}。满意即可验收结束；仍需调整则继续提交下一轮修改意见。</p></div>`;
   if (String(latest.status) === 'capacity_conflict') return `<div class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"><p class="text-[13px] font-bold text-amber-300">第 ${latest.revision_no} 次修改存在容量冲突</p><p class="text-[11px] text-zinc-400 mt-2">AI 不会推倒领导已通过母版，请精简或重新组织内容后继续提交。</p></div>`;
-  if (String(latest.status) === 'failed') return `<div class="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4"><p class="text-[13px] font-bold text-rose-300">第 ${latest.revision_no} 次修改生成失败</p><p class="text-[11px] text-zinc-400 mt-2">上一可验收版本仍保留，可继续补充意见让 AI 重新处理。</p></div>`;
+  if (String(latest.status) === 'failed') return `<div class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"><p class="text-[13px] font-bold text-amber-300">当前版本继续有效</p><p class="text-[11px] text-zinc-400 mt-2">本轮尚未形成新的正式交付版，您可以继续补充修改意见。</p></div>`;
   return `<div class="rounded-xl border border-white/10 bg-white/5 p-4"><p class="text-[13px] font-bold text-white">第 ${latest.revision_no} 次修改 · ${esc(stage.label)}</p></div>`;
 }
 
@@ -112,7 +113,7 @@ function syncHeader() {
   let text = '母版已锁定';
   if (state.openClarifications?.length) text = `第 ${pendingRoundNo()} 次修改待补充`;
   else if (state.latest?.status === 'ready_for_review') text = `第 ${state.latest.revision_no} 次修改待验收`;
-  else if (['generation_requested','generating'].includes(String(state.latest?.status))) text = `第 ${state.latest.revision_no} 次修改生成中`;
+  else if (['generation_requested','generating'].includes(String(state.latest?.status))) text = `第 ${state.latest.revision_no} 次修改处理中`;
   else if (state.feedback && !state.latest) text = `第 ${pendingRoundNo()} 次修改 AI 理解中`;
   badge.textContent = text;
   badge.className = 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5';

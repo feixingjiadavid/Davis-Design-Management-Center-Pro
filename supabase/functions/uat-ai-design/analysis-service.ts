@@ -3,6 +3,7 @@ import { buildRequirementPrompt, REQUIREMENT_PROMPT_VERSION } from "./requiremen
 import type { RequirementBrief } from "./requirement-schema.ts";
 import { classifyQuestion, selectBoundedQuestions } from "./clarification-policy.ts";
 import { analyzeVisualReferenceSet } from "./qwen-vision-client.ts";
+import { mirrorFormalAiMessage } from "./formal-ai-message.mjs";
 
 export function decideAnalysisStatus(brief: RequirementBrief) {
   return brief.missing_information.length > 0 || brief.clarification_questions.length > 0
@@ -182,9 +183,25 @@ export async function analyzeRequirement(admin: any, task: Record<string, any>, 
   }).select("*").single();
   if (inserted.error) throw inserted.error;
 
-  await admin.from("uat_clarifications").update({ status: "superseded", closed_reason: "new_analysis_version" }).eq("task_id", task.id).eq("status", "open").neq("analysis_id", inserted.data.id);
+  const superseded = await admin.from("uat_clarifications").update({ status: "superseded", closed_reason: "new_analysis_version" }).eq("task_id", task.id).eq("status", "open").neq("analysis_id", inserted.data.id).select("id");
+  if (superseded.error) throw superseded.error;
+  const supersededIds = (superseded.data || []).map((item: any) => item.id);
+  if (supersededIds.length) {
+    const closedMessages = await admin.from("task_ai_messages").update({ status: "superseded" }).in("id", supersededIds);
+    if (closedMessages.error) throw closedMessages.error;
+  }
   if (enrichedBrief.clarification_questions.length > 0) {
-    await admin.from("uat_clarifications").insert(enrichedBrief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open", round: clarificationRound, question_type: classifyQuestion(question) })));
+    const questions = await admin.from("uat_clarifications")
+      .insert(enrichedBrief.clarification_questions.map((question) => ({ task_id: task.id, analysis_id: inserted.data.id, question, status: "open", round: clarificationRound, question_type: classifyQuestion(question) })))
+      .select("id,question");
+    if (questions.error) throw questions.error;
+    await Promise.all((questions.data || []).map((question: any) => mirrorFormalAiMessage(admin, {
+      id: question.id,
+      taskId: task.id,
+      senderRole: "ai_designer",
+      content: question.question,
+      status: "open",
+    })));
   }
   await admin.from("ai_design_jobs").upsert({
     task_id: task.id,

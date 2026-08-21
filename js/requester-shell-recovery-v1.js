@@ -1,4 +1,4 @@
-import { bootstrapRequesterDeliveryViewV13 } from './requester-delivery-view-v13.js?v=all-stages-lazy-v1';
+import { bootstrapRequesterDemoViewV12 } from './requester-demo-view-v12.js?v=requester-formal-versions-v1';
 
 let started = false;
 let retryTimer = null;
@@ -85,7 +85,7 @@ export function bootstrapRequesterShellRecoveryV1(client) {
       renderTask(data);
       rendered = true;
       window.__requesterShellRecovered = true;
-      bootstrapRequesterDeliveryViewV13(client);
+      bootstrapRequesterDemoViewV12(client);
     } catch (error) {
       console.error('需求方壳层恢复失败', error);
       renderFailure(error?.message || String(error));

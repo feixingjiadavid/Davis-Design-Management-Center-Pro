@@ -4,6 +4,7 @@ import { analyzeRequirement, answerClarification, confirmUnderstanding } from ".
 import { isAutomaticAnalysisAction, shouldRefreshSourcesForAction } from "./workflow-actions.ts";
 import { delegateSoftQuestions, requesterAck, saveAiProcessingAck, saveRequesterAnswers } from "./clarification-chat.ts";
 import { handleTemplateWorkflowAction, isTemplateWorkflowAction } from "./template-workflow-router.ts";
+import { mirrorFormalAiMessage } from "./formal-ai-message.mjs";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -102,16 +103,19 @@ Deno.serve(async (request) => {
         details: { analysis_id: analysis.id, version: analysis.version, status: analysis.status, automatic: isAutomaticAnalysisAction(action), generation_started: false },
       });
       if (["answer_clarifications", "delegate_to_ai"].includes(action)) {
-        await admin.from("uat_clarification_messages").insert({
+        const aiReply = nextStatus === "needs_input"
+          ? "我已结合你的补充重新理解需求，仍有少量关键信息需要确认。"
+          : "我已重新理解完成。信息足够，但系统不会自动生图，等待明确生成动作。";
+        const replyResult = await admin.from("uat_clarification_messages").insert({
           task_id,
           analysis_id: analysis.id,
           sender_role: "ai_designer",
           message_type: "summary",
-          content: nextStatus === "needs_input"
-            ? "我已结合你的补充重新理解需求，仍有少量关键信息需要确认。"
-            : "我已重新理解完成。信息足够，但系统不会自动生图，等待明确生成动作。",
+          content: aiReply,
           metadata: { status: nextStatus, version: analysis.version, generation_started: false },
-        });
+        }).select("id").single();
+        if (replyResult.error) throw replyResult.error;
+        await mirrorFormalAiMessage(admin, { id: replyResult.data.id, taskId: task_id, senderRole: "ai_designer", content: aiReply });
       }
       return { ok: true, status: nextStatus, analysis };
     } catch (error) {

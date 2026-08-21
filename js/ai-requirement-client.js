@@ -63,6 +63,23 @@ export async function loadAiRequirementState(supabase, taskId, activeSourceUrl =
   };
 }
 
+export async function loadAiCommunicationState(supabase, taskId) {
+  const messagesResult = await supabase
+    .from('task_ai_messages')
+    .select('id,task_id,sender_type,content,status,created_at')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+  if (messagesResult.error) throw messagesResult.error;
+  const messages = messagesResult.data || [];
+  return {
+    analysis: null,
+    clarifications: messages
+      .filter(item => item.sender_type === 'ai' && item.status === 'open')
+      .map(item => ({ id: item.id, question: item.content, status: 'open' })),
+    messages,
+  };
+}
+
 export async function saveVisualReferences(supabase, taskId, references, { replace = false } = {}) {
   if (!Array.isArray(references) || references.length < 1 || references.length > 6) throw new Error('视觉参考图需为1-6张');
   if (replace) {

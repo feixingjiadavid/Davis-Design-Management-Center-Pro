@@ -29,23 +29,24 @@ if (typeof window !== 'undefined') {
   window.__davisSupabaseSdkSource = sdk.source;
   const page = location.pathname.split('/').pop() || 'index.html';
 
-  import('./js/index-lifecycle-recovery.js?v=uat-index-lifecycle-v1').catch(error => console.error('需求大厅生命周期恢复模块加载失败:', error));
-  import('./js/required-design-assets-ui.js?v=uat-assets-v1')
+  if (page === 'index.html' || page === '') {
+    import('./js/index-lifecycle-recovery.js?v=uat-index-lifecycle-v1').catch(error => console.error('需求大厅生命周期恢复模块加载失败:', error));
+  }
+  import('./js/required-design-assets-ui.js?v=requester-formal-v2')
     .then(module => module.bootstrapRequiredDesignAssetsUI(supabase))
-    .then(() => import('./js/visual-reference-ui.js?v=uat-style-reference-drive-v7'))
+    .then(() => import('./js/visual-reference-ui.js?v=requester-formal-v2'))
     .then(module => module.bootstrapVisualReferenceUI(supabase))
     .catch(error => console.error('设计输入模块加载失败:', error));
-  import('./js/ai-auto-recovery.js?v=uat-state-recovery-v48-required-assets')
-    .then(module => module.bootstrapAiAutoRecovery(supabase))
-    .catch(error => console.error('AI 自动恢复模块加载失败:', error));
-  import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
-    .then(module => module.bootstrapAiConfidenceCopy())
-    .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
-  import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7c')
-    .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
-    .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
-
   if (page === 'ai-designer-workspace.html') {
+    import('./js/ai-auto-recovery.js?v=uat-state-recovery-v48-required-assets')
+      .then(module => module.bootstrapAiAutoRecovery(supabase))
+      .catch(error => console.error('AI 自动恢复模块加载失败:', error));
+    import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
+      .then(module => module.bootstrapAiConfidenceCopy())
+      .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
+    import('./js/seedream-demo-orchestrator-v5.js?v=seedream-demo-drive-preview-v7c')
+      .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
+      .catch(error => console.error('Seedream Demo v5 控制器加载失败:', error));
     import('./js/seedream-drive-preview-ui-v7.js?v=all-stages-lazy-v1')
       .then(module => module.bootstrapSeedreamDrivePreviewUIV7(supabase))
       .catch(error => console.error('Seedream Drive 工作台预览层加载失败:', error));
@@ -61,30 +62,12 @@ if (typeof window !== 'undefined') {
   }
 
   if (page === 'task-detail-requester.html') {
-    import('./js/requester-shell-recovery-v1.js?v=requester-shell-recovery-v1-20260820')
-      .then(module => module.bootstrapRequesterShellRecoveryV1(supabase))
-      .catch(error => console.error('需求方独立壳层恢复失败:', error));
-    import('./js/requester-bootstrap-recovery-v1.js?v=requester-bootstrap-recovery-v1')
+    import('./js/requester-bootstrap-recovery-v1.js?v=requester-formal-v2')
       .then(module => module.bootstrapRequesterRecovery())
       .catch(error => console.error('需求方页面启动恢复模块加载失败:', error));
-    import('./js/requester-demo-view-v12.js?v=all-stages-lazy-v1')
-      .then(module => module.bootstrapRequesterDemoViewV12(supabase))
-      .catch(error => console.error('框架方案只读预览加载失败:', error));
-    import('./js/requester-delivery-view-v13.js?v=all-stages-lazy-v1')
-      .then(module => module.bootstrapRequesterDeliveryViewV13(supabase))
-      .catch(error => console.error('当前可验收版本加载失败:', error));
-    import('./js/requester-ai-stability-v1.js?v=all-stages-lazy-v1')
-      .then(module => module.bootstrapRequesterAiStabilityV1())
-      .catch(error => console.error('需求详情稳定性修复加载失败:', error));
-    import('./js/requester-revision-loop-v1.js?v=revision-loop-v1-20260820')
-      .then(module => module.bootstrapRequesterRevisionLoopV1(supabase))
-      .catch(error => console.error('需求方内容修改循环加载失败:', error));
-    import('./js/framework-hd-review-v1.js?v=all-stages-lazy-v1')
-      .then(module => module.bootstrapFrameworkHdReview(supabase))
-      .catch(error => console.error('高清框架审核视图加载失败:', error));
-    import('./js/all-generation-results-v1.js?v=all-generation-history-v1')
-      .then(module => module.bootstrapAllGenerationResultsV1(supabase))
-      .catch(error => console.error('需求方全阶段生成结果加载失败:', error));
+    import('./js/requester-formal-deliveries.js?v=requester-formal-v2')
+      .then(module => module.bootstrapRequesterFormalDeliveries(supabase))
+      .catch(error => console.error('正式设计版本库加载失败:', error));
   }
 
   if (page === 'manager-workspace.html') {
