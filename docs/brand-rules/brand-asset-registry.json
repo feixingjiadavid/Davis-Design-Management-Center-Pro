@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "description": "Official VI asset registry for Davis AI Designer",
+  "assets": [
+    {
+      "brand": "webank",
+      "level": "corporate",
+      "type": "logo",
+      "variants": ["color", "white"],
+      "source": "google_drive",
+      "editable": false
+    },
+    {
+      "brand": "wesmart",
+      "level": "culture",
+      "type": "logo",
+      "variants": ["color", "white"],
+      "source": "google_drive",
+      "priority": 1,
+      "editable": false
+    },
+    {
+      "brand": "tech_group",
+      "level": "department",
+      "type": "logo",
+      "variants": ["color", "white"],
+      "source": "google_drive",
+      "priority": 2,
+      "editable": false
+    }
+  ],
+  "rules": {
+    "culture_event": {
+      "required": ["wesmart"],
+      "optional": ["tech_group"],
+      "forbidden": ["generated_logo", "unknown_logo"]
+    },
+    "corporate_event": {
+      "required": ["webank"]
+    }
+  }
+}
