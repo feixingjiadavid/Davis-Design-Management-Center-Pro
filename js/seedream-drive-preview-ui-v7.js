@@ -6,7 +6,7 @@ const objectUrls=new Map();
 const esc=(value)=>String(value??'').replace(/[&<>"']/g,(ch)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const pageName=()=>location.pathname.split('/').pop()||'index.html';
 const outputOf=(row)=>{if(row?.output&&typeof row.output==='object')return row.output;try{return JSON.parse(String(row?.output||'{}'))}catch{return{}}};
-const taskIdForPage=()=>pageName()==='ai-designer-workspace.html'?String(document.querySelector('.task.active')?.dataset?.id||'').trim():String(new URLSearchParams(location.search).get('id')||'').trim();
+const activeAiTaskId=()=>String(document.querySelector('.task.active')?.dataset?.id||'').trim();
 const readyRows=(rows)=>(rows||[]).filter(row=>['ready','confirmed'].includes(String(row.status))).sort((a,b)=>Number(a.page_index||1)-Number(b.page_index||1));
 const demoTotal=(rows)=>Math.max(1,...(rows||[]).map(row=>Number(row.page_count||0)));
 const rowsSnapshot=(rows)=>JSON.stringify((rows||[]).map(row=>{const o=outputOf(row);return[row.id,row.page_index,row.status,row.updated_at,o.drive_file_id,o.drive_url]}));
@@ -27,9 +27,7 @@ function bindLazy(host){installLazy();host.querySelectorAll('[data-v7-drive-file
 function findLegacyWorkspaceGallery(panel){const candidates=[...panel.querySelectorAll('div.grid')];return candidates.find(node=>node.id!=='ai-drive-demo-gallery-v7-grid'&&/Demo\s*0?1\s*\/\s*0?3/i.test(node.textContent||''))||null}
 function renderWorkspace(rows,taskId){const panel=document.getElementById('ai-visual-context-panel');if(!panel)return false;const legacy=findLegacyWorkspaceGallery(panel);if(legacy)legacy.style.display='none';let host=document.getElementById('ai-drive-demo-gallery-v7');if(!host){host=document.createElement('section');host.id='ai-drive-demo-gallery-v7';host.className='mt-4';panel.appendChild(host)}const snapshot=`${taskId}:${rowsSnapshot(rows)}`;const changed=fillHost(host,snapshot,`<div class="flex items-center justify-between gap-3 mb-3"><p class="text-xs font-bold text-emerald-300">Seedream Demo · Google Drive 持久化预览</p><span class="text-[10px] text-slate-500">${readyRows(rows).length}/${Math.max(3,demoTotal(rows))} 已完成</span></div><div id="ai-drive-demo-gallery-v7-grid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div>`);if(changed)bindLazy(host);return true}
 
-function renderRequester(rows,taskId){const content=document.getElementById('ai-requirement-content');if(!content)return false;let host=document.getElementById('requester-drive-demo-gallery-v7');if(!host){host=document.createElement('section');host.id='requester-drive-demo-gallery-v7';host.className='mt-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4';content.appendChild(host)}const snapshot=`${taskId}:${rowsSnapshot(rows)}`;const changed=fillHost(host,snapshot,`<div class="flex items-center justify-between gap-3 mb-4"><div><p class="font-bold text-white">Demo 版本 · ${readyRows(rows).length}/${Math.max(3,demoTotal(rows))}</p><p class="text-xs text-zinc-500 mt-1">历史 Demo 永久保留，高清图按视口加载。</p></div></div><div class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${cardsHtml(rows)}</div>`);if(changed)bindLazy(host);return true}
-
-async function renderNow(){if(running||!supabase||document.hidden)return;const path=pageName();if(path!=='ai-designer-workspace.html'&&path!=='task-detail-requester.html')return;const taskId=taskIdForPage();if(!taskId)return;running=true;try{const rows=await loadCurrentRows(taskId);if(path==='ai-designer-workspace.html')renderWorkspace(rows,taskId);else renderRequester(rows,taskId)}catch(error){console.error('Seedream Drive 预览同步失败',error)}finally{running=false}}
+async function renderNow(){if(running||!supabase||document.hidden||pageName()!=='ai-designer-workspace.html')return;const taskId=activeAiTaskId();if(!taskId)return;running=true;try{const rows=await loadCurrentRows(taskId);renderWorkspace(rows,taskId)}catch(error){console.error('Seedream Drive 预览同步失败',error)}finally{running=false}}
 function schedule(delay=250){clearTimeout(renderTimer);renderTimer=setTimeout(renderNow,delay)}
 
 export function bootstrapSeedreamDrivePreviewUIV7(client){
@@ -42,3 +40,4 @@ export function bootstrapSeedreamDrivePreviewUIV7(client){
   schedule(0);
   window.addEventListener('beforeunload',()=>{clearInterval(heartbeat);clearTimeout(renderTimer);lazy?.disconnect()},{once:true});
 }
+
