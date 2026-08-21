@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1242" height="1660" viewBox="0 0 1242 1660">
+  <rect width="1242" height="1660" fill="#FFFFFF"/>
+  <rect x="0" y="0" width="1242" height="1660" fill="#F8FAFC"/>
+  <rect x="120" y="220" width="1002" height="1050" rx="32" fill="#FFFFFF"/>
+  <text x="621" y="760" text-anchor="middle" font-size="64" font-family="Arial">AI Creative Output</text>
+  <text x="621" y="840" text-anchor="middle" font-size="34" font-family="Arial">P1 Culture Event Poster</text>
+  <g data-brand-layer="wesmart" data-source="google_drive">
+    <rect x="72" y="64" width="260" height="70" rx="12" fill="#111827"/>
+    <text x="202" y="110" text-anchor="middle" fill="#FFFFFF" font-size="30" font-family="Arial">WeSmart</text>
+  </g>
+  <g data-brand-layer="tech_group" data-source="google_drive">
+    <rect x="270" y="1510" width="702" height="70" rx="12" fill="#111827"/>
+    <text x="621" y="1555" text-anchor="middle" fill="#FFFFFF" font-size="28" font-family="Arial">科技及智能事业群</text>
+  </g>
+</svg>
