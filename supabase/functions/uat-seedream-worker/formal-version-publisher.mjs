@@ -22,6 +22,12 @@ function isFormalAssetUrl(value) {
   return /^https:\/\//i.test(url) && url.includes(PUBLIC_DESIGNS_MARKER);
 }
 
+function formalAsset(asset) {
+  if (!asset || asset.asset_role !== 'branded_output' || asset.storage_bucket !== 'designs') return null;
+  if (asset.composition_status !== 'passed' || asset.vi_passed !== true || !asset.id || !isFormalAssetUrl(asset.asset_url)) return null;
+  return asset;
+}
+
 function orderedAssets(rows, baseAssets = []) {
   const expected = Math.max(
     ...rows.map((row) => Number(row?.page_count || 0)),
@@ -33,24 +39,26 @@ function orderedAssets(rows, baseAssets = []) {
   for (const asset of baseAssets) {
     const sortOrder = Number(asset?.sort_order || 0);
     const assetUrl = String(asset?.asset_url || '').trim();
-    if (sortOrder < 1 || sortOrder > expected || byPage.has(sortOrder) || !isFormalAssetUrl(assetUrl)) return null;
-    byPage.set(sortOrder, assetUrl);
+    const sourceId = String(asset?.source_generation_asset_id || '').trim();
+    if (sortOrder < 1 || sortOrder > expected || byPage.has(sortOrder) || !isFormalAssetUrl(assetUrl) || !sourceId) return null;
+    byPage.set(sortOrder, { asset_url: assetUrl, source_generation_asset_id: sourceId });
   }
   const changedPages = new Set();
   for (const row of rows) {
     const pageIndex = Number(row?.page_index || 0);
-    const assetUrl = String(row?.output?.formal_asset_url || '').trim();
-    if (!READY_STATUSES.has(String(row?.status || '')) || pageIndex < 1 || pageIndex > expected || changedPages.has(pageIndex) || !isFormalAssetUrl(assetUrl)) return null;
+    const source = formalAsset(row?.formal_asset);
+    if (!READY_STATUSES.has(String(row?.status || '')) || pageIndex < 1 || pageIndex > expected || changedPages.has(pageIndex) || !source) return null;
     changedPages.add(pageIndex);
-    byPage.set(pageIndex, assetUrl);
+    byPage.set(pageIndex, { asset_url: source.asset_url, source_generation_asset_id: source.id });
   }
   if (byPage.size !== expected) return null;
   for (let page = 1; page <= expected; page += 1) if (!byPage.has(page)) return null;
 
-  return [...byPage.entries()].sort(([left], [right]) => left - right).map(([sort_order, asset_url]) => ({
-    asset_url,
+  return [...byPage.entries()].sort(([left], [right]) => left - right).map(([sort_order, asset]) => ({
+    asset_url: asset.asset_url,
     asset_type: 'image',
     sort_order,
+    source_generation_asset_id: asset.source_generation_asset_id,
   }));
 }
 

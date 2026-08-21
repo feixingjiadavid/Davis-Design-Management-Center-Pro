@@ -4,7 +4,7 @@ export function generationMode(row = {}) {
 
 const urls = (rows = []) => rows.map((item) => String(item?.data_url || '')).filter(Boolean);
 
-export function resolveGenerationStrategy({ row = {}, templatePage = null, styleReferences = [], assets = [], adjustment = null } = {}) {
+export function resolveGenerationStrategy({ row = {}, templatePage = null, styleReferences = [], assets = [], adjustment = null, brandPlan = null } = {}) {
   const mode = generationMode(row);
   if (mode === 'content_revision') {
     const anchor = String(templatePage?.drive_preview_data_url || '').trim();
@@ -17,23 +17,30 @@ export function resolveGenerationStrategy({ row = {}, templatePage = null, style
       images: [anchor],
       completionTarget: 'reviewing',
       promptVersion: 'seedream-template-revision-v1',
+      creativeArea: brandPlan?.creativeArea || null,
+      brandPlan,
     };
   }
   if (mode === 'framework_revision') {
     return {
       mode,
       promptKind: 'creative_framework_revision',
-      images: [...urls(styleReferences), ...urls(assets)],
+      images: [...urls(styleReferences), ...urls(filterCreativeAssets(assets))],
       completionTarget: 'pending_approval',
       promptVersion: 'seedream-demo-creative-director-v2',
       adjustment,
+      creativeArea: brandPlan?.creativeArea || null,
+      brandPlan,
     };
   }
   return {
     mode: 'initial_framework',
     promptKind: 'creative_initial',
-    images: [...urls(styleReferences), ...urls(assets)],
+    images: [...urls(styleReferences), ...urls(filterCreativeAssets(assets))],
     completionTarget: 'pending_approval',
     promptVersion: 'seedream-demo-creative-director-v2',
+    creativeArea: brandPlan?.creativeArea || null,
+    brandPlan,
   };
 }
+import { filterCreativeAssets } from './brand-rule-matcher.mjs';

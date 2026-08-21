@@ -3,7 +3,7 @@ import test from "node:test";
 import { buildCreativeDemoPrompt, DEMO_PROMPT_VERSION } from "./creative-prompt.ts";
 
 test("creative prompt version is isolated from the old placement-first Demo", () => {
-  assert.equal(DEMO_PROMPT_VERSION, "seedream-demo-creative-director-v2");
+  assert.equal(DEMO_PROMPT_VERSION, "seedream-brand-safe-creative-v3");
 });
 
 test("cover prompt puts concept and composition rules before business copy", () => {
@@ -24,13 +24,13 @@ test("cover prompt puts concept and composition rules before business copy", () 
     styleReference: { file_name: "style.jpg", note: "主参考" },
     assets: [{ file_name: "IP.png", asset_role: "TIG IP" }, { file_name: "logo.png", asset_role: "WeBank Logo" }],
   });
-  assert.ok(prompt.indexOf("先建立一个明确的视觉创意概念") < prompt.indexOf("【本页必须呈现的业务文案】"));
-  assert.match(prompt, /封面不是正文信息页/);
-  assert.match(prompt, /至少三层空间关系/);
-  assert.match(prompt, /IP必须与场景、道具、文字或图形发生关系/);
-  assert.match(prompt, /禁止.*横向色带|禁止.*色块分区/);
-  assert.match(prompt, /像资深设计师完成的主视觉/);
-  assert.ok(prompt.length <= 4500);
+  assert.ok(prompt.indexOf("先形成一个完整创意场景") < prompt.indexOf("【信息架构：内容完整，但必须设计出主次】"));
+  assert.match(prompt, /这是封面主视觉/);
+  assert.match(prompt, /背景氛围层.*中景信息与道具层.*前景主角层/);
+  assert.match(prompt, /IP必须参与场景/);
+  assert.match(prompt, /禁止三条横向色带/);
+  assert.match(prompt, /成熟品牌活动海报/);
+  assert.ok(prompt.length <= 4800);
 });
 
 test("cover renders only the first six priority lines and keeps overflow as non-rendered context", () => {
@@ -41,9 +41,9 @@ test("cover renders only the first six priority lines and keeps overflow as non-
     styleReference: { file_name: "ref.jpg" },
     assets: [],
   });
-  assert.match(prompt, /【本页必须呈现的业务文案】[\s\S]*封面文案6/);
-  assert.doesNotMatch(prompt.match(/【本页必须呈现的业务文案】[\s\S]*?【仅作理解上下文，不要在封面重复排版】/)?.[0] || "", /封面文案7/);
-  assert.match(prompt, /【仅作理解上下文，不要在封面重复排版】[\s\S]*封面文案7/);
+  assert.match(prompt, /【辅助信息】[\s\S]*封面文案6/);
+  assert.doesNotMatch(prompt.match(/【辅助信息】[\s\S]*?【后续上下文/)?.[0] || "", /封面文案7/);
+  assert.match(prompt, /【后续上下文（当前页弱化）】[\s\S]*封面文案7/);
   assert.match(prompt, /封面文案10/);
 });
 
@@ -54,8 +54,8 @@ test("non-cover information pages keep all supplied page copy as renderable cont
     styleReference: { file_name: "ref.jpg" },
     assets: [],
   });
-  assert.match(prompt, /【本页必须呈现的业务文案】[\s\S]*规则A[\s\S]*规则B[\s\S]*规则C/);
-  assert.doesNotMatch(prompt, /仅作理解上下文/);
+  assert.match(prompt, /【信息架构：内容完整，但必须设计出主次】[\s\S]*规则A[\s\S]*规则B[\s\S]*规则C/);
+  assert.doesNotMatch(prompt, /后续上下文/);
 });
 
 test("prompt keeps required asset identities and reference style separate", () => {
@@ -67,6 +67,45 @@ test("prompt keeps required asset identities and reference style separate", () =
   });
   assert.match(prompt, /图1是风格参考/);
   assert.match(prompt, /TIG IP/);
-  assert.match(prompt, /保持身份特征/);
-  assert.match(prompt, /不得复制参考图中的具体人物、品牌、标题或物体/);
+  assert.match(prompt, /保持原始身份与外观/);
+  assert.match(prompt, /不要复制参考图的具体人物.*Logo或原文案/);
+});
+
+test("cultural P1 reserves system brand areas and excludes logo assets", () => {
+  const prompt = buildCreativeDemoPrompt({
+    brief: { goal: "OpenTalk" },
+    page: { index: 1, title: "封面页", copy: ["OpenTalk"] },
+    styleReference: { file_name: "ref.jpg" },
+    assets: [
+      { file_name: "wesmart.svg", asset_role: "WeSmart Logo" },
+      { file_name: "speaker.jpg", asset_role: "嘉宾照片" },
+    ],
+    brandPlan: {
+      creativeArea: { x: 0, y: 220, width: 1242, height: 1260 },
+      safeArea: { top_left_reserved: true, bottom_reserved: true },
+      pageRule: { apply_brand: true },
+    },
+  });
+  assert.match(prompt, /只负责 Creative Area（x=0, y=220, 1242×1260）/);
+  assert.match(prompt, /leave clean space at top left for brand logo/);
+  assert.match(prompt, /leave clean space at bottom for organization logo/);
+  assert.doesNotMatch(prompt, /图\d+：WeSmart Logo/);
+  assert.match(prompt, /图2：嘉宾照片/);
+  assert.match(prompt, /禁止绘制、临摹、拼写或修改任何Logo/);
+});
+
+test("P2 and later pages explicitly forbid model-generated logos", () => {
+  const prompt = buildCreativeDemoPrompt({
+    brief: { goal: "文化活动" },
+    page: { index: 2, title: "内容页", copy: ["内容"] },
+    styleReference: null,
+    assets: [],
+    brandPlan: {
+      creativeArea: { x: 0, y: 0, width: 1242, height: 1660 },
+      safeArea: { top_left_reserved: false, bottom_reserved: false },
+      pageRule: { apply_brand: false, forbidden_asset_types: ["wesmart_logo", "tig_org_logo"] },
+    },
+  });
+  assert.match(prompt, /当前页禁止出现任何Logo/);
+  assert.doesNotMatch(prompt, /leave clean space at top left/);
 });

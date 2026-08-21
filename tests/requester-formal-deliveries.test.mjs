@@ -25,4 +25,3 @@ assert.match(html, /点击图片查看大图/);
 assert.doesNotMatch(html, /Google Drive|Seedream|run id|failed|retry|Prompt/);
 
 console.log('requester formal delivery tests passed');
-

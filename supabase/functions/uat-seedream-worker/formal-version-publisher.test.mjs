@@ -12,7 +12,14 @@ const row = (page, status = 'ready', assetUrl = storageUrl(page)) => ({
   page_index: page,
   page_count: 3,
   status,
-  output: { formal_asset_url: assetUrl },
+  formal_asset: {
+    id: `branded-${page}`,
+    asset_url: assetUrl,
+    asset_role: 'branded_output',
+    storage_bucket: 'designs',
+    composition_status: 'passed',
+    vi_passed: true,
+  },
 });
 
 test('publishes one v1 framework only when every page is ready', () => {
@@ -33,6 +40,7 @@ test('publishes one v1 framework only when every page is ready', () => {
   });
   assert.deepEqual(publication.assets.map(({ sort_order }) => sort_order), [1, 2, 3]);
   assert.deepEqual(publication.assets.map(({ asset_url }) => asset_url), [storageUrl(1), storageUrl(2), storageUrl(3)]);
+  assert.deepEqual(publication.assets.map(({ source_generation_asset_id }) => source_generation_asset_id), ['branded-1', 'branded-2', 'branded-3']);
 });
 
 test('maps content revision one to v2 and preserves formal modification meaning', () => {
@@ -56,7 +64,7 @@ test('builds a complete revision version by overlaying changed pages on the prio
     mode: 'content_revision',
     revisionNo: 1,
     rows: [{ ...row(2), page_count: 3 }],
-    baseAssets: [1, 2, 3].map((page) => ({ sort_order: page, asset_url: storageUrl(page) })),
+    baseAssets: [1, 2, 3].map((page) => ({ sort_order: page, asset_url: storageUrl(page), source_generation_asset_id: `branded-${page}` })),
   });
   assert.ok(publication);
   assert.equal(publication.assets.length, 3);
@@ -70,6 +78,8 @@ test('does not publish partial, failed, duplicated, or non-Storage results', () 
   assert.equal(buildFormalVersionPublication({ taskId: 'TK-1', mode: 'framework', rows: [row(1), row(2, 'failed'), row(3)] }), null);
   assert.equal(buildFormalVersionPublication({ taskId: 'TK-1', mode: 'framework', rows: [row(1), row(1), row(3)] }), null);
   assert.equal(buildFormalVersionPublication({ taskId: 'TK-1', mode: 'framework', rows: [row(1), row(2), row(3, 'ready', 'https://drive.google.com/file/d/3')] }), null);
+  assert.equal(buildFormalVersionPublication({ taskId: 'TK-1', mode: 'framework', rows: [row(1), { ...row(2), formal_asset: { ...row(2).formal_asset, asset_role: 'raw_creative' } }, row(3)] }), null);
+  assert.equal(buildFormalVersionPublication({ taskId: 'TK-1', mode: 'framework', rows: [row(1), { ...row(2), formal_asset: { ...row(2).formal_asset, composition_status: 'failed', vi_passed: false } }, row(3)] }), null);
 });
 
 test('builds deterministic Supabase Storage object paths without technical URLs', () => {
@@ -84,6 +94,9 @@ test('worker publishes formal versions without writing generation delivery into 
   assert.doesNotMatch(source, /history_json/);
   assert.match(source, /from\('design_versions'\)/);
   assert.match(source, /from\('design_version_assets'\)/);
-  assert.match(source, /storage\.from\('designs'\)\.upload/);
-  assert.match(source, /formal_asset_url/);
+  assert.match(source, /from\('ai_generation_assets'\)/);
+  assert.match(source, /from\('brand_composition_runs'\)/);
+  assert.doesNotMatch(source, /output\?\.formal_asset_url|output\.formal_asset_url/);
+  assert.doesNotMatch(source, /GOOGLE_DRIVE_ARCHIVE_FAILED/);
+  assert.match(source, /eq\('generation_id',row\.id\)\.eq\('status','passed'\)/);
 });

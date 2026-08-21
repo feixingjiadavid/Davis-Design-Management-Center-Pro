@@ -30,3 +30,28 @@ test('legacy null mode is initial framework', () => {
   assert.equal(strategy.mode, 'initial_framework');
   assert.equal(strategy.completionTarget, 'pending_approval');
 });
+
+test('creative generation excludes logo files from Seedream image inputs', () => {
+  const strategy = resolveGenerationStrategy({
+    row: { generation_mode: 'initial_framework' },
+    styleReferences: [{ data_url: 'style' }],
+    assets: [
+      { data_url: 'logo', asset_role: 'WeSmart Logo', file_name: 'wesmart.svg' },
+      { data_url: 'ip', asset_role: 'TIG IP', file_name: 'tig-ip.png' },
+    ],
+  });
+  assert.deepEqual(strategy.images, ['style', 'ip']);
+});
+
+test('strategy carries the resolved Creative Area contract', () => {
+  const brandPlan = {
+    mode: 'creative_generate',
+    creativeArea: { x: 0, y: 220, width: 1242, height: 1260 },
+    safeArea: { top_left_reserved: true, bottom_reserved: true },
+    publishable: false,
+    blockReason: 'BRAND_RULE_INACTIVE',
+  };
+  const strategy = resolveGenerationStrategy({ row: {}, brandPlan });
+  assert.deepEqual(strategy.creativeArea, brandPlan.creativeArea);
+  assert.deepEqual(strategy.brandPlan, brandPlan);
+});
