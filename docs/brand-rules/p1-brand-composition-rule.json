@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "scene": "p1_xiaohongshu_poster",
+  "base_rule": "culture_event",
+  "canvas": {
+    "width": 1242,
+    "height": 1660
+  },
+  "brand_layers": [
+    {
+      "brand": "wesmart",
+      "required": true,
+      "position": "top_left",
+      "priority": 1,
+      "max_scale": 0.25,
+      "preserve_aspect_ratio": true
+    },
+    {
+      "brand": "tech_group",
+      "required": false,
+      "position": "bottom_center",
+      "priority": 2,
+      "max_scale": 0.2,
+      "preserve_aspect_ratio": true
+    }
+  ],
+  "hard_rules": {
+    "allow_generated_logo": false,
+    "allow_unknown_logo": false,
+    "allow_asset_edit": false,
+    "require_google_drive_source": true
+  }
+}
