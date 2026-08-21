@@ -1,0 +1,35 @@
+{
+  "scenario": "p1_xiaohongshu_poster",
+  "status": "ready_for_composer",
+  "input": {
+    "canvas": "1242x1660",
+    "background": "light"
+  },
+  "brandOutput": {
+    "topLeft": {
+      "asset": "wesmart",
+      "variant": "color",
+      "source": "google_drive",
+      "position": "top_left"
+    },
+    "bottomCenter": {
+      "asset": "tech_group",
+      "variant": "color",
+      "source": "google_drive",
+      "position": "bottom_center"
+    }
+  },
+  "validation": {
+    "officialAssetOnly": true,
+    "generatedLogoForbidden": true,
+    "aspectRatioLocked": true,
+    "viCheckRequired": true
+  },
+  "pipeline": [
+    "raw_creative",
+    "brand_resolver",
+    "composer",
+    "vi_check",
+    "branded_output"
+  ]
+}
