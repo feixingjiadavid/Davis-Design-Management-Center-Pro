@@ -14,13 +14,15 @@ const grouped = groupFormalVersions([
   { id:'a2', design_version_id:'v2', asset_url:storage.replace('p-1','p-2'), sort_order:1 },
   { id:'a1', design_version_id:'v2', asset_url:storage, sort_order:0 },
 ]);
-assert.deepEqual(grouped.map(item => item.id), ['v1','v2']);
-assert.deepEqual(grouped[1].assets.map(item => item.id), ['a1','a2']);
+assert.deepEqual(grouped.map(item => item.id), ['v2','v1']);
+assert.deepEqual(grouped[0].assets.map(item => item.id), ['a1','a2']);
 const html = renderFormalVersionsHtml(grouped);
 assert.match(html, /v1 框架方案/);
 assert.match(html, /v2 第一次修改/);
+assert.ok(html.indexOf('v2 第一次修改') < html.indexOf('v1 框架方案'));
 assert.match(html, /当前最新版本/);
 assert.match(html, /点击图片查看大图/);
 assert.doesNotMatch(html, /Google Drive|Seedream|run id|failed|retry|Prompt/);
 
 console.log('requester formal delivery tests passed');
+
