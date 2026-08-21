@@ -1,0 +1,24 @@
+{
+  "stage": "branded_output_ready",
+  "scene": "p1_xiaohongshu_poster",
+  "canvas": "1242x1660",
+  "brandLayers": [
+    {
+      "brand": "wesmart",
+      "position": "top_left",
+      "variant": "color",
+      "source": "google_drive"
+    },
+    {
+      "brand": "tech_group",
+      "position": "bottom_center",
+      "variant": "color",
+      "source": "google_drive"
+    }
+  ],
+  "vi": {
+    "officialAssetOnly": true,
+    "generatedLogoForbidden": true,
+    "aspectRatioLocked": true
+  }
+}
