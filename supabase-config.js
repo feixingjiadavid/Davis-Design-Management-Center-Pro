@@ -44,7 +44,7 @@ if (typeof window !== 'undefined') {
     import('./js/ai-confidence-copy.js?v=uat-confidence-copy-v1b')
       .then(module => module.bootstrapAiConfidenceCopy())
       .catch(error => console.error('AI 理解程度文案模块加载失败:', error));
-    import('./js/seedream-demo-orchestrator-v5.js?v=generation-control-no-preview-v8')
+    import('./js/seedream-demo-orchestrator-v5.js?v=generation-control-explicit-host-v9')
       .then(module => module.bootstrapSeedreamDemoOrchestratorV5(supabase))
       .catch(error => console.error('AI 图片生成控制器加载失败:', error));
     import('./js/ai-formal-pipeline-v1.js?v=ai-formal-pipeline-v2-preserve-history')
